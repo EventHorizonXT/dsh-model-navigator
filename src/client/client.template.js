@@ -71,7 +71,10 @@ window.__ModuleLoader__.load({
         close: "关闭",
         loading: "加载中…",
         retry: "重试加载",
-        favorites: "收藏",
+        favorites: "收藏夹",
+        favoritesEmpty: "还没有收藏，点击模型旁的星标即可添加。",
+        favoritesUnavailable: "收藏的模型当前不在目录中。",
+        recentEmpty: "还没有最近使用的模型。",
         currentSelection: "当前模型",
         recent: "最近使用",
         favoriteAdd: "收藏模型",
@@ -118,6 +121,9 @@ window.__ModuleLoader__.load({
         loading: "Loading…",
         retry: "Retry loading",
         favorites: "Favorites",
+        favoritesEmpty: "No favorites yet. Use the star beside a model to add it.",
+        favoritesUnavailable: "Your favorite models are not in the current catalog.",
+        recentEmpty: "No recent models yet.",
         currentSelection: "Current model",
         recent: "Recently used",
         favoriteAdd: "Favorite model",
@@ -415,7 +421,14 @@ window.__ModuleLoader__.load({
       ".dsmn-trigger[disabled]{opacity:.5;cursor:default;}",
       ".dsmn_groupLabel{padding:6px 7px 2px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary);}",
       ".dsmn_cellBack .dsmn_cellChevron{margin-right:2px;}",
-      ".dsmn-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-top:1px solid var(--dsw-alias-border-l1);font-size:11px;color:var(--dsw-alias-label-secondary);}",
+      ".dsmn_shortcuts{flex-shrink:0;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1);padding-bottom:4px;margin-bottom:3px}",
+      ".dsmn_shortcutEntry{height:36px;gap:8px}",
+      ".dsmn_favoritesEntry{color:var(--dsw-alias-state-business-primary);font-weight:600;background:var(--dsw-alias-interactive-bg-hover)}",
+      ".dsmn_shortcutIcon{width:16px;flex:none;text-align:center}",
+      ".dsmn_shortcutCount{margin-left:auto;min-width:18px;text-align:center;font-size:11px;border-radius:6px;padding:1px 4px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}",
+      ".dsmn_shortcutOpen{background:var(--dsw-alias-interactive-bg-hover)}",
+      ".dsmn_shortcutMenu{z-index:1101;box-sizing:border-box;min-width:0;width:300px;max-width:calc(100vw - 16px)}",
+      ".dsmn_shortcutHeading{flex-shrink:0;padding:6px 8px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary)}",
       ".dsmn-setting{display:flex;flex-direction:column;gap:8px;padding:10px 0;}",
       ".dsmn-setting-head{display:flex;align-items:flex-start;gap:12px;}",
       ".dsmn-setting-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}",
@@ -566,6 +579,39 @@ window.__ModuleLoader__.load({
       var position = positionState[0];
       var setPosition = positionState[1];
 
+      var shortcutState = React.useState(null);
+      var shortcutKind = shortcutState[0];
+      var setShortcutKind = shortcutState[1];
+      var shortcutPositionState = React.useState(null);
+      var shortcutPosition = shortcutPositionState[0];
+      var setShortcutPosition = shortcutPositionState[1];
+      var shortcutRef = React.useRef(null);
+      var shortcutAnchorRef = React.useRef(null);
+      var shortcutTimerRef = React.useRef(null);
+      var shortcutFocusRef = React.useRef(false);
+      var shortcutItemRefs = React.useRef([]);
+      function cancelShortcutClose() {
+        if (shortcutTimerRef.current !== null) clearTimeout(shortcutTimerRef.current);
+        shortcutTimerRef.current = null;
+      }
+      function closeShortcut(restoreFocus) {
+        cancelShortcutClose();
+        setShortcutKind(null);
+        setShortcutPosition(null);
+        if (restoreFocus && shortcutAnchorRef.current !== null && typeof shortcutAnchorRef.current.focus === "function") shortcutAnchorRef.current.focus();
+      }
+      function scheduleShortcutClose() {
+        cancelShortcutClose();
+        shortcutTimerRef.current = setTimeout(function () { shortcutTimerRef.current = null; setShortcutKind(null); setShortcutPosition(null); }, 200);
+      }
+      function openShortcut(kind, event, focusFirst) {
+        cancelShortcutClose();
+        shortcutAnchorRef.current = event === undefined || event.currentTarget === undefined ? null : event.currentTarget;
+        shortcutFocusRef.current = focusFirst === true;
+        setShortcutKind(kind);
+        setQuery("");
+      }
+
       var rootRef = React.useRef(null);
       var popoverRef = React.useRef(null);
       var selectionRef = React.useRef(null);
@@ -583,6 +629,14 @@ window.__ModuleLoader__.load({
       var pane = paneState[0];
       var setPane = paneState[1];
       var itemRefs = React.useRef([]);
+      React.useEffect(function () {
+        if (!open || pane !== "providers") {
+          cancelShortcutClose();
+          setShortcutKind(null);
+          setShortcutPosition(null);
+        }
+        return cancelShortcutClose;
+      }, [open, pane, sessionId, draftStore.getGeneration()]);
 
       var current = snapshot === null || snapshot === undefined || snapshot.current === undefined ? null : snapshot.current;
       var status = snapshot === null || snapshot === undefined || snapshot.status === undefined ? "idle" : snapshot.status;
@@ -695,6 +749,41 @@ window.__ModuleLoader__.load({
         [open, snapshot, query, openProvider, openModel, notice]
       );
 
+      // Separate fixed surface avoids clipping by the main menu's scrolling content.
+      React.useEffect(function () {
+        if (!open || shortcutKind === null || pane !== "providers") return;
+        function placeShortcut() {
+          var anchor = shortcutAnchorRef.current;
+          var menu = popoverRef.current;
+          var submenu = shortcutRef.current;
+          if (anchor === null || menu === null || submenu === null || typeof anchor.getBoundingClientRect !== "function") return;
+          var a = anchor.getBoundingClientRect();
+          var m = menu.getBoundingClientRect();
+          var bounds = submenu.getBoundingClientRect();
+          // The list can already be constrained by a previous submenu's maxHeight.
+          // Measure its full scroll content so switching lists can grow the surface.
+          var content = typeof submenu.querySelector === "function" ? submenu.querySelector(".dsmn_groups") : null;
+          var naturalHeight = content === null ? Math.max(submenu.scrollHeight || 0, bounds.height || 200)
+            : content.offsetTop + content.scrollHeight + 5;
+          var next = __core.shortcutMenuPosition({ left: m.left, right: m.right, top: a.top },
+            { width: bounds.width || 300, height: naturalHeight },
+            { width: window.innerWidth, height: window.innerHeight });
+          setShortcutPosition(next);
+          if (shortcutFocusRef.current && shortcutItemRefs.current.length > 0) {
+            shortcutFocusRef.current = false;
+            var first = shortcutItemRefs.current[0];
+            if (first !== null && first !== undefined && typeof first.focus === "function") first.focus();
+          }
+        }
+        placeShortcut();
+        if (typeof window.addEventListener === "function") window.addEventListener("resize", placeShortcut);
+        document.addEventListener("scroll", placeShortcut, true);
+        return function () {
+          if (typeof window.removeEventListener === "function") window.removeEventListener("resize", placeShortcut);
+          document.removeEventListener("scroll", placeShortcut, true);
+        };
+      }, [open, pane, shortcutKind, position, favoritesKey, snapshot]);
+
       // 外部点击 / Esc 关闭。
       // Escape 层级（0.1.6 起）：菜单内部处理器（清空搜索 → 面板返回上级）先吃掉
       // 自己那一层；这里的 document 捕获监听只在「Esc 没被菜单消化」时才关整个菜单。
@@ -708,6 +797,8 @@ window.__ModuleLoader__.load({
             if (root !== null && typeof root.contains === "function" && root.contains(event.target)) return;
             var menu = popoverRef.current;
             if (menu !== null && menu !== undefined && typeof menu.contains === "function" && menu.contains(event.target)) return;
+            var shortcut = shortcutRef.current;
+            if (shortcut !== null && typeof shortcut.contains === "function" && shortcut.contains(event.target)) return;
             setOpen(false);
           };
           var onKeyDown = function (event) {
@@ -718,6 +809,8 @@ window.__ModuleLoader__.load({
               // 但捕获监听先于它运行，所以这里不能关——置位后由冒泡阶段决定去留。
               return;
             }
+            var shortcut = shortcutRef.current;
+            if (shortcut !== null && typeof shortcut.contains === "function" && shortcut.contains(event.target)) return;
             var root = rootRef.current;
             if (root !== null && typeof root.contains === "function" && root.contains(event.target)) return;
             setOpen(false);
@@ -843,8 +936,14 @@ window.__ModuleLoader__.load({
       var hits = trimmed.length === 0 ? null : __core.searchModels(visibleProviders, trimmed);
       var shownProviders = trimmed.length === 0 ? visibleProviders : __core.filterProviders(visibleProviders, trimmed);
       var rows = [];
-      var tier = store.getTier();
-      var tierNote = tier === "host" ? t("storageHost") : tier === "local" ? t("storageLocal") : t("storageMemory");
+      var shortcutRows = [];
+      var shortcutModels = [];
+      shortcutItemRefs.current = [];
+      var shortcutItemIndex = 0;
+      function shortcutItemRef() {
+        var at = shortcutItemIndex++;
+        return function (node) { shortcutItemRefs.current[at] = node; };
+      }
 
       itemRefs.current = [];
       var itemIndex = 0;
@@ -880,9 +979,9 @@ window.__ModuleLoader__.load({
         );
       }
 
-      function optionRow(key, label, selected, onPick, depth, detail) {
+      function optionRow(key, label, selected, onPick, depth, detail, refBuilder) {
         return h("button", {
-          key: key, ref: itemRef(), type: "button", role: "menuitemradio", "aria-checked": selected ? "true" : "false",
+          key: key, ref: (refBuilder || itemRef)(), type: "button", role: "menuitemradio", "aria-checked": selected ? "true" : "false",
           "data-depth": depth,
           className: "dsmn_option" + (selected ? " dsmn_selected" : ""),
           title: label,
@@ -895,7 +994,7 @@ window.__ModuleLoader__.load({
         );
       }
 
-      function modelOption(model, prefix) {
+      function modelOption(model, prefix, refBuilder) {
         var key = __core.stableKeyOf(model.ref);
         var selected = current !== null && current.provider === model.ref.providerId && current.model === model.ref.modelId;
         var provider = catalog.providerOf.get(model.ref.providerId);
@@ -907,12 +1006,13 @@ window.__ModuleLoader__.load({
               commit(model.ref.providerId, model.ref.modelId, undefined);
               return;
             }
+            closeShortcut(false);
             setOpenProvider(model.ref.providerId);
             setOpenModel(key);
             setPane("effort");
-          }, "3", detail),
+          }, "3", detail, refBuilder),
           h("button", {
-            type: "button", className: "dsmn_favorite", ref: itemRef(),
+            type: "button", className: "dsmn_favorite", ref: (refBuilder || itemRef)(),
             "data-action": "favorite-model", "data-model-id": model.ref.modelId,
             "aria-label": t(favorite ? "favoriteRemove" : "favoriteAdd") + " · " + detail,
             "aria-pressed": favorite ? "true" : "false",
@@ -927,26 +1027,57 @@ window.__ModuleLoader__.load({
         );
       }
 
-      if (pane === "providers" && trimmed.length === 0) {
-        var shortcutKeys = new Set();
-        function shortcutSection(id, title, keys) {
-          var entries = [];
-          for (var si = 0; si < keys.length && entries.length < 8; si += 1) {
-            var shortcut = catalog.modelOf.get(keys[si]);
-            if (shortcut === undefined || shortcutKeys.has(keys[si])) continue;
-            shortcutKeys.add(keys[si]);
-            entries.push(modelOption(shortcut, id + "-"));
-          }
-          if (entries.length > 0) rows.push(h("div", { key: id, "data-section": id },
-            h("div", { className: "dsmn_shortcutTitle" }, title), entries));
+      function modelsForKeys(keys) {
+        var found = [];
+        var seen = new Set();
+        for (var k = 0; k < keys.length; k += 1) {
+          var model = catalog.modelOf.get(keys[k]);
+          if (model === undefined || seen.has(keys[k])) continue;
+          seen.add(keys[k]);
+          found.push(model);
         }
-        if (current !== null) shortcutSection("current", t("currentSelection"), [JSON.stringify([current.provider, current.model])]);
-        shortcutSection("favorites", t("favorites"), preferences.favorites);
-        var recentKeys = [];
-        var lastProviders = Object.keys(preferences.lastModelByProvider);
-        if (preferences.lastProviderId !== undefined) lastProviders.unshift(preferences.lastProviderId);
-        for (var rp = 0; rp < lastProviders.length; rp += 1) recentKeys.push(JSON.stringify([lastProviders[rp], preferences.lastModelByProvider[lastProviders[rp]]]));
-        shortcutSection("recent", t("recent"), recentKeys);
+        return found;
+      }
+      var recentKeys = [];
+      var lastProviders = Object.keys(preferences.lastModelByProvider);
+      if (preferences.lastProviderId !== undefined) lastProviders.unshift(preferences.lastProviderId);
+      for (var rp = 0; rp < lastProviders.length; rp += 1) recentKeys.push(JSON.stringify([lastProviders[rp], preferences.lastModelByProvider[lastProviders[rp]]]));
+      var favoriteModels = modelsForKeys(preferences.favorites);
+      var recentModels = modelsForKeys(recentKeys);
+      function shortcutEntry(kind, title, count) {
+        return h("button", {
+          key: kind, type: "button", ref: itemRef(), role: "menuitem",
+          className: "dsmn_cell dsmn_shortcutEntry" + (kind === "favorites" ? " dsmn_favoritesEntry" : "") + (shortcutKind === kind ? " dsmn_shortcutOpen" : ""),
+          "data-action": "open-shortcuts", "data-kind": kind,
+          "aria-haspopup": "menu", "aria-expanded": shortcutKind === kind ? "true" : "false",
+          "aria-controls": "dsmn-" + sessionId + "-" + kind,
+          onMouseEnter: function (event) { openShortcut(kind, event, false); },
+          onMouseLeave: scheduleShortcutClose,
+          onClick: function (event) { openShortcut(kind, event, false); },
+          onKeyDown: function (event) {
+            if (event.key !== "ArrowRight") return;
+            event.preventDefault();
+            event.stopPropagation();
+            openShortcut(kind, event, true);
+          }
+        },
+          h("span", { className: "dsmn_shortcutIcon", "aria-hidden": "true" }, kind === "favorites" ? "★" : "◷"),
+          h("span", { className: "dsmn_cellLabel" }, title),
+          h("span", { className: "dsmn_shortcutCount" }, String(count)),
+          uiNode("IconChevronRightOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "›"))
+        );
+      }
+      if (pane === "providers") {
+        shortcutRows.push(shortcutEntry("favorites", t("favorites"), preferences.favorites.length));
+        shortcutRows.push(shortcutEntry("recent", t("recent"), recentModels.length));
+        if (trimmed.length === 0 && current !== null) {
+          var currentDisplay = lookupDisplay(current.provider, current.model);
+          if (currentDisplay !== undefined) rows.push(h("div", { key: "current", "data-section": "current" },
+            h("div", { className: "dsmn_shortcutTitle" }, t("currentSelection")), modelOption(currentDisplay, "current-")));
+        }
+      }
+      if (shortcutKind !== null && pane === "providers") {
+        shortcutModels = shortcutKind === "favorites" ? favoriteModels : recentModels;
       }
 
         if (preferences.showSearch && pane !== "effort") {
@@ -979,7 +1110,9 @@ window.__ModuleLoader__.load({
             rows.push(h("button", {
               key: "p-" + provider.id, ref: itemRef(), type: "button", role: "menuitem", className: "dsmn_cell", "data-depth": "1",
               title: label,
+              onMouseEnter: function () { closeShortcut(false); },
               onClick: function () {
+                closeShortcut(false);
                 setOpenProvider(provider.id);
                 setOpenModel(null);
                 setQuery("");
@@ -1089,6 +1222,11 @@ window.__ModuleLoader__.load({
       }
 
       function onMenuKeyDown(event) {
+        if (event.key === "Escape" && shortcutKind !== null) {
+          event.stopPropagation();
+          closeShortcut(true);
+          return;
+        }
         if (event.key === "Escape") {
           // Escape 层级：清空搜索（输入框自己的 onKeyDown）→ 面板返回上级 → 关闭整层。
           // providers 层没有更深的层级可返回，这里负责真正的关闭；其余层 stopPropagation
@@ -1143,6 +1281,7 @@ window.__ModuleLoader__.load({
             uiComponent("MenuSurface") === null ? "div" : uiComponent("MenuSurface"),
             {
               className: "dsmn_menu scrollable",
+              onMouseLeave: scheduleShortcutClose,
               ref: popoverRef,
               role: "menu",
               "aria-label": t("stepProvider"),
@@ -1155,9 +1294,36 @@ window.__ModuleLoader__.load({
               h("button", { type: "button", "data-action": "retry-catalog", className: "dsmn_retry", onClick: function () { if (props.load !== undefined) props.load(); } }, t("retry"))) : null,
             submitting || status === "selecting" ? h("div", { key: "selecting", className: "dsmn_status", role: "status" }, t("selecting")) : null,
             (status === "idle" || status === "loading") && available ? h("div", { key: "loading", className: "dsmn_status" }, t("loading")) : null,
-            h("div", { key: "items", className: "dsmn_groups" }, rows),
-            h("div", { key: "footer", className: "dsmn-footer" }, h("span", null, tierNote))
+            shortcutRows.length > 0 ? h("div", { key: "shortcuts", className: "dsmn_shortcuts" }, shortcutRows) : null,
+            h("div", { key: "items", className: "dsmn_groups" }, rows)
           );
+      var shortcutMenuNode = !open || pane !== "providers" || shortcutKind === null ? null : h(
+        uiComponent("MenuSurface") === null ? "div" : uiComponent("MenuSurface"), {
+          id: "dsmn-" + sessionId + "-" + shortcutKind,
+          className: "dsmn_menu dsmn_shortcutMenu scrollable", role: "menu", ref: shortcutRef,
+          "data-shortcut-menu": shortcutKind,
+          "data-side": shortcutPosition === null ? undefined : shortcutPosition.side,
+          "aria-label": t(shortcutKind === "favorites" ? "favorites" : "recent"),
+          style: shortcutPosition === null ? { left: 8, top: 8, visibility: "hidden" } : { left: shortcutPosition.left, top: shortcutPosition.top, width: shortcutPosition.width, maxHeight: shortcutPosition.maxHeight },
+          onMouseEnter: cancelShortcutClose, onMouseLeave: scheduleShortcutClose,
+          onKeyDown: function (event) {
+            event.stopPropagation();
+            if (event.key === "Escape" || event.key === "ArrowLeft") { event.preventDefault(); closeShortcut(true); return; }
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            var entries = shortcutItemRefs.current.filter(function (node) { return node !== null && node !== undefined; });
+            if (entries.length === 0) return;
+            var at = entries.indexOf(event.target);
+            var next = event.key === "ArrowDown" ? (at + 1) % entries.length : (at <= 0 ? entries.length - 1 : at - 1);
+            entries[next].focus();
+            event.preventDefault();
+          }
+        },
+        h("div", { className: "dsmn_shortcutHeading" }, t(shortcutKind === "favorites" ? "favorites" : "recent")),
+        h("div", { className: "dsmn_groups" }, shortcutModels.length > 0
+          ? shortcutModels.map(function (model) { return modelOption(model, shortcutKind + "-", shortcutItemRef); })
+          : h("div", { className: "dsmn_empty" }, t(shortcutKind === "favorites" ? (preferences.favorites.length > 0 ? "favoritesUnavailable" : "favoritesEmpty") : "recentEmpty")))
+      );
+      if (menuNode !== null) menuNode = h("div", { className: "dsmn_menuLayer" }, menuNode, shortcutMenuNode);
       if (menuNode !== null && CAN_PORTAL) {
         try {
           menuNode = ReactDOM.createPortal(menuNode, document.body);
@@ -1308,7 +1474,7 @@ window.__ModuleLoader__.load({
      * ================================================================== */
     var DIAG = {
       plugin: "dsh-model-navigator",
-      version: "0.2.1",
+      version: "0.3.0",
       seat: { priority: -20, enabled: null, registered: false, error: null },
       errors: [],
       events: [],

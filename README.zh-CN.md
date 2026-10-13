@@ -1,15 +1,17 @@
 # DSH Model Navigator
 
-[English](README.md) · [下载 v0.2.1](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.2.1)
+[English](README.md) · [下载 v0.3.0](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.0)
 
 用增强导航器替换输入框里的官方模型按钮：供应商 → 按家族分组的模型 → 宿主提供的思维强度。
 
-0.2.1 使用 `conversation.input.model` 的单入口槽位（priority `-20`）。显示、切换和 `/model` 共享官方 `modelDirectories` 的会话目录，界面以宿主 `current` 为准。
+0.3.0 使用 `conversation.input.model` 的单入口槽位（priority `-20`）。显示、切换和 `/model` 共享官方 `modelDirectories` 的会话目录，界面以宿主 `current` 为准。
 
 ## 功能
 
 - 首层全局搜索，可按显示名、真实模型 ID 或供应商查找。
-- 当前模型快捷入口、收藏按钮、收藏列表、各供应商最近成功选择的模型。
+- 顶部常驻的醒目收藏夹入口与数量；包含当前模型，空收藏显示操作提示。
+- 收藏夹和最近使用支持悬停、点击或键盘展开子菜单，默认向右，边缘自动避让。
+- 收藏不限制为 8 个；取消收藏立即更新列表。当前模型仍有独立快捷入口。
 - 搜索结果同时显示供应商与模型 ID，同名模型可区分。
 - 按家族折叠；默认展开当前家族，保存用户展开和折叠偏好。
 - 宿主顺序模式逐行保留模型顺序；渠道优先和家族优先提供分组导航。
@@ -29,10 +31,10 @@
 
 ## 安装与更新
 
-从 [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.2.1) 下载 `dsh-model-navigator-0.2.1.tgz`，在 Desktop 的 **插件 → 添加插件** 的“包名或地址”栏填入下载文件的绝对路径进行安装。也可以把下载文件的绝对路径交给宿主插件管理工具：
+从 [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.0) 下载 `dsh-model-navigator-0.3.0.tgz`，在 Desktop 的 **插件 → 添加插件** 的“包名或地址”栏填入下载文件的绝对路径进行安装。也可以把下载文件的绝对路径交给宿主插件管理工具：
 
 ```text
-plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator-0.2.1.tgz
+plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator-0.3.0.tgz
 ```
 
 包安装升级时先卸载旧版本，再添加新版本包；源码目录链接更新后，在插件页关闭再启用导航器。源码安装、校验值与更新方式见 [安装说明](docs/INSTALL.md)。
@@ -52,7 +54,7 @@ npm run package
 - `src/core/`：身份、搜索、分类、排序、草稿和偏好纯逻辑。
 - `src/client/client.template.js`：客户端接入与界面。
 - `lib/client.js`：宿主加载的正式产物。
-- `tests/`：110 项回归测试，包含真实执行打包产物的交互测试。
+- `tests/`：122 项回归测试，包含真实执行打包产物的交互测试。
 - `tools/verify-host.mjs`：隔离执行宿主实际的 `SlotCore` 和 `ModelDirectory`，验证入口选举、共享投影、开关、崩溃回退和卸载；存储通知与网络传输边界使用模拟实现。
 
 诊断通道：

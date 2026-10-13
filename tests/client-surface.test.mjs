@@ -1619,8 +1619,7 @@ test("0.1.4 回归：平台提供官方 atoms 时面板走 MenuSurface，而不�
 });
 
 
-function navigatorFixture(overrides = {}) {
-  const harness = makeHarness();
+function navigatorFixture(overrides = {}, harness = makeHarness()) {
   const bundle = loadBundle(CLIENT, harness);
   const context = fakeCtx();
   bundle.exports.apply(context.ctx);
@@ -1820,7 +1819,10 @@ test("favorite action does not switch a model and exposes a persistent root shor
   assert.equal(f.selectCalls.length, 0);
   assert.deepEqual(plain(f.face.store.getPreferences().favorites), ['["deepseek-account","deepseek-chat"]']);
   findElement(f.draw(), n => n.props.className === "dsmn_cell dsmn_cellBack").props.onClick();
-  const shortcut = findElement(f.draw(), n => n.props["data-section"] === "favorites");
+  const entry = findElement(f.draw(), n => n.props["data-action"] === "open-shortcuts" && n.props["data-kind"] === "favorites");
+  assert.ok(entry, "favorites must have an explicit entry");
+  entry.props.onClick({ currentTarget: null });
+  const shortcut = findElement(f.draw(), n => n.props["data-shortcut-menu"] === "favorites");
   assert.ok(shortcut && textOf(shortcut).includes("DeepSeek Chat"));
 });
 
@@ -1857,4 +1859,182 @@ test("model seat diagnostics distinguish registration from rendering", () => {
   store.patch({ enabled: true });
   assert.equal(seat.registered, true);
   assert.equal(seat.error, null);
+});
+
+
+function shortcutEntry(tree, kind) {
+  return findElement(tree, n => n.props["data-action"] === "open-shortcuts" && n.props["data-kind"] === kind);
+}
+function shortcutMenu(tree, kind) {
+  return findElement(tree, n => n.props["data-shortcut-menu"] === kind);
+}
+
+test("favorites entry is always visible, highlighted, and shows an empty state", () => {
+  const f = navigatorFixture();
+  const entry = shortcutEntry(f.open(), "favorites");
+  assert.ok(entry, "zero favorites must not hide the entry");
+  assert.match(entry.props.className, /dsmn_favoritesEntry/);
+  assert.ok(textOf(entry).includes("0"));
+  entry.props.onClick({ currentTarget: null });
+  const menu = shortcutMenu(f.draw(), "favorites");
+  assert.ok(menu && textOf(menu).includes("favoritesEmpty"));
+});
+
+test("a favorited current model remains in favorites and can be removed there", () => {
+  const f = navigatorFixture();
+  const key = JSON.stringify([SNAPSHOT.current.provider, SNAPSHOT.current.model]);
+  f.face.store.patch({ favorites: [key] });
+  const entry = shortcutEntry(f.open(), "favorites");
+  assert.ok(entry && textOf(entry).includes("1"));
+  entry.props.onClick({ currentTarget: null });
+  let menu = shortcutMenu(f.draw(), "favorites");
+  const selected = findElement(menu, n => n.props.role === "menuitemradio" && n.props["aria-checked"] === "true");
+  assert.ok(selected, "current must not be deduplicated out of favorites");
+  findElement(menu, n => n.props["data-action"] === "favorite-model").props.onClick();
+  assert.equal(f.selectCalls.length, 0);
+  assert.deepEqual(plain(f.face.store.getPreferences().favorites), []);
+  assert.ok(textOf(shortcutMenu(f.draw(), "favorites")).includes("favoritesEmpty"));
+});
+
+test("recent selections appear in a hover submenu, including the favorited current model", () => {
+  const f = navigatorFixture();
+  const key = JSON.stringify([SNAPSHOT.current.provider, SNAPSHOT.current.model]);
+  f.face.store.patch({ favorites: [key], lastProviderId: SNAPSHOT.current.provider,
+    lastModelByProvider: { [SNAPSHOT.current.provider]: SNAPSHOT.current.model, openai: "gpt-test" } });
+  const entry = shortcutEntry(f.open(), "recent");
+  assert.ok(entry && !textOf(entry).includes("DeepSeek Flash"), "root must show one entry, not inline recent models");
+  assert.equal(shortcutMenu(f.draw(), "recent"), null);
+  entry.props.onMouseEnter({ currentTarget: null });
+  const menu = shortcutMenu(f.draw(), "recent");
+  assert.ok(menu && findElement(menu, n => n.props.role === "menuitemradio" && n.props["aria-checked"] === "true"));
+  assert.equal(f.selectCalls.length, 0, "hovering must never select a model");
+});
+
+test("favorites submenu includes more than eight models", () => {
+  const models = Array.from({ length: 12 }, (_, i) => ({ id: "m" + i, name: "Model " + i }));
+  const snapshot = { ...SNAPSHOT, groups: [{ id: "p", name: "Provider", models }], current: { provider: "p", model: "m0" } };
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  f.face.store.patch({ favorites: models.map(m => JSON.stringify(["p", m.id])) });
+  shortcutEntry(f.open(), "favorites").props.onClick({ currentTarget: null });
+  assert.equal(collectElements(shortcutMenu(f.draw(), "favorites"), n => n.props.role === "menuitemradio").length, 12);
+});
+
+test("moving the pointer from shortcut entry into submenu cancels delayed closure", () => {
+  const harness = makeHarness();
+  const timers = new Map();
+  let token = 0;
+  harness.setTimeout = fn => { timers.set(++token, fn); return token; };
+  harness.clearTimeout = id => timers.delete(id);
+  const f = navigatorFixture({}, harness);
+  let entry = shortcutEntry(f.open(), "recent");
+  entry.props.onMouseEnter({ currentTarget: null });
+  entry = shortcutEntry(f.draw(), "recent");
+  entry.props.onMouseLeave();
+  assert.equal(timers.size, 1);
+  let menu = shortcutMenu(f.draw(), "recent");
+  menu.props.onMouseEnter();
+  assert.equal(timers.size, 0, "crossing the small gap must not close the submenu");
+  menu.props.onMouseLeave();
+  for (const fn of Array.from(timers.values())) fn();
+  assert.equal(shortcutMenu(f.draw(), "recent"), null);
+  assert.ok(shortcutEntry(f.draw(), "favorites"), "only the submenu closes");
+});
+
+test("a click inside the portaled submenu is not treated as an outside click", () => {
+  const f = navigatorFixture();
+  shortcutEntry(f.open(), "recent").props.onClick({ currentTarget: null });
+  const inside = {};
+  const menu = shortcutMenu(f.draw(), "recent");
+  assert.ok(menu);
+  menu.props.ref.current = { contains: target => target === inside };
+  f.document.dispatch("pointerdown", { target: inside });
+  assert.ok(shortcutMenu(f.draw(), "recent"));
+  f.document.dispatch("pointerdown", { target: {} });
+  assert.equal(shortcutMenu(f.draw(), "recent"), null);
+  assert.equal(shortcutEntry(f.draw(), "favorites"), null);
+});
+
+test("shortcut keyboard navigation opens right and Escape closes only the submenu", () => {
+  const f = navigatorFixture();
+  const entry = shortcutEntry(f.open(), "favorites");
+  assert.ok(entry);
+  const event = key => ({ key, currentTarget: null, stopPropagation() {}, preventDefault() {} });
+  entry.props.onKeyDown(event("ArrowRight"));
+  const menu = shortcutMenu(f.draw(), "favorites");
+  assert.ok(menu);
+  menu.props.onKeyDown(event("Escape"));
+  assert.equal(shortcutMenu(f.draw(), "favorites"), null);
+  assert.ok(shortcutEntry(f.draw(), "favorites"));
+});
+
+test("picker omits preference storage details while settings retain them", () => {
+  const f = navigatorFixture();
+  assert.equal(findElement(f.open(), n => String(n.props.className).includes("dsmn-footer")), null);
+  const settings = f.registrations.find(r => r.options.name === "settings.general.item");
+  assert.ok(textOf(f.render(settings.component(settings.options.inject()))).includes("storageMemory"));
+});
+
+test("shortcut placement opens right, flips at the edge, and clamps tiny viewports", () => {
+  const core = loadBundle(PROBE).window.__DSH_MODEL_NAVIGATOR_CORE__;
+  assert.equal(typeof core.shortcutMenuPosition, "function");
+  const normal = core.shortcutMenuPosition({ left: 100, right: 400, top: 120 }, { width: 300, height: 200 }, { width: 1100, height: 700 });
+  assert.equal(normal.side, "right");
+  assert.equal(normal.left, 406);
+  const edge = core.shortcutMenuPosition({ left: 760, right: 1060, top: 620 }, { width: 300, height: 200 }, { width: 1100, height: 700 });
+  assert.equal(edge.side, "left");
+  assert.equal(edge.left, 454);
+  assert.ok(edge.top + edge.maxHeight <= 692);
+  const tiny = core.shortcutMenuPosition({ left: 2, right: 140, top: -5 }, { width: 320, height: 450 }, { width: 240, height: 180 });
+  assert.ok(tiny.left >= 8 && tiny.top >= 8);
+  assert.ok(tiny.left + tiny.width <= 232 && tiny.top + tiny.maxHeight <= 172);
+});
+
+test("shortcut placement measures full list content after a shorter submenu", () => {
+  const f = navigatorFixture();
+  f.window.innerWidth = 1100;
+  f.window.innerHeight = 700;
+  const tree = f.open();
+  const rootMenu = findElement(tree, n => n.props.role === "menu");
+  rootMenu.props.ref.current = { getBoundingClientRect: () => ({ left: 100, right: 400 }) };
+  shortcutEntry(tree, "recent").props.onClick({ currentTarget: { getBoundingClientRect: () => ({ top: 120 }) } });
+  const menu = shortcutMenu(f.draw(), "recent");
+  menu.props.ref.current = {
+    getBoundingClientRect: () => ({ width: 300, height: 80 }), scrollHeight: 80,
+    querySelector: () => ({ scrollHeight: 180, offsetTop: 25 }),
+  };
+  f.document.dispatch("scroll");
+  assert.equal(shortcutMenu(f.draw(), "recent").props.style.maxHeight, 210,
+    "previous constrained surface height must not truncate the new list");
+});
+
+
+test("favorite submenu selection opens effort and commits the complete selection", async () => {
+  const f = navigatorFixture();
+  f.face.store.patch({ favorites: [JSON.stringify([SNAPSHOT.current.provider, SNAPSHOT.current.model])] });
+  shortcutEntry(f.open(), "favorites").props.onClick({ currentTarget: null });
+  findElement(shortcutMenu(f.draw(), "favorites"), n => n.props.role === "menuitemradio").props.onClick();
+  assert.equal(shortcutMenu(f.draw(), "favorites"), null);
+  assert.equal(f.selectCalls.length, 0, "effort selection must precede submission");
+  findElement(f.draw(), n => n.props["data-depth"] === "4" && textOf(n).includes("高")).props.onClick();
+  await Promise.resolve();
+  assert.deepEqual(plain(f.selectCalls), [{ provider: SNAPSHOT.current.provider, model: SNAPSHOT.current.model, reasoningEffort: "high" }]);
+  assert.equal(shortcutEntry(f.draw(), "favorites"), null, "successful selection closes both surfaces");
+});
+
+test("closing the picker clears a pending shortcut hover timer", () => {
+  const harness = makeHarness();
+  const timers = new Map();
+  let token = 0;
+  harness.setTimeout = fn => { timers.set(++token, fn); return token; };
+  harness.clearTimeout = id => timers.delete(id);
+  const f = navigatorFixture({}, harness);
+  const entry = shortcutEntry(f.open(), "recent");
+  entry.props.onMouseEnter({ currentTarget: null });
+  f.draw();
+  entry.props.onMouseLeave();
+  assert.equal(timers.size, 1);
+  f.document.dispatch("pointerdown", { target: {} });
+  f.draw();
+  assert.equal(timers.size, 0);
+  assert.equal(shortcutMenu(f.open(), "recent"), null, "reopening must not restore a stale hover submenu");
 });
