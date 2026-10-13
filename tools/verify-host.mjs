@@ -10,6 +10,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 const moduleRoot = process.argv[2];
 if (!moduleRoot || !path.isAbsolute(moduleRoot)) throw Error('Pass an absolute host node_modules directory.');
 const { SlotCore } = await import(pathToFileURL(path.join(moduleRoot, '@deepseek-ai/dsh-client-ui-slots/lib/index.js')));
+const cordis = await import(pathToFileURL(path.join(moduleRoot, '@deepseek-ai/cordis/lib/index.js')));
 // The shipped snapshot module references bundler-only zustand/immer packages.
 // Simulate this boundary explicitly; SlotCore and ModelDirectory remain real host code.
 const storeModule = { createSnapshotStore(initial) {
@@ -41,7 +42,7 @@ const React = { createElement: (type, props) => ({ type, props }) };
 const modules = {
   react: React, 'react-dom': {}, 'react/jsx-runtime': {},
   '@deepseek-ai/dsh-client-ui-primitives': {},
-  '@deepseek-ai/cordis': { Service: class {} },
+  '@deepseek-ai/cordis': cordis,
   '@deepseek-ai/dsh-client-store': storeModule,
 };
 const native = load(path.join(moduleRoot, '@deepseek-ai/dsh-client-ui-model-selection/lib/client.js'), name => {
@@ -101,3 +102,61 @@ disposeCodex();
 assert.equal(winner().registrant, 'official');
 directory.dispose();
 console.log('PASS: real host slots + real ModelDirectory: single entry, shared projection, disable/enable, Codex priority conflict in both activation orders, crash fallback, unload.');
+
+// Exercise a cold resolver with the real Cordis caller-context tracing. A direct
+// ModelDirectory fixture above skips this dependency boundary entirely.
+const coldRoot = new cordis.Context();
+const coldRegistrations = [];
+const coldProjection = storeModule.createSnapshotStore({ next: snapshot.current });
+let coldOwner = { session: { projections: { faceOf: () => coldProjection } } };
+const coldCalls = [];
+const wire = {
+  modelCatalog: async () => ({ ok: true, value: { groups: snapshot.groups, failures: [], default: snapshot.current } }),
+  selectModel: async value => {
+    coldCalls.push(value);
+    coldProjection.set({ next: { provider: value.provider, model: value.model } });
+    return { ok: true };
+  },
+};
+class Remote extends cordis.Service {
+  constructor(ctx) { super(ctx, 'remote'); }
+  get session() { return this.ctx['remote.session']; }
+  $on() { return noop; }
+}
+// Services must live in a sibling provider fiber. Providing on the root would
+// bypass consumer injection checks through the root's own service store.
+const transportFiber = coldRoot.plugin({ apply(ctx) {
+  ctx.provide('remote.session', wire);
+  new Remote(ctx);
+  ctx.provide('sessions', { scope: () => coldRoot, binding: () => coldOwner, subagentAddress: () => undefined });
+  ctx.provide('slots', {
+    inject: (_key, callback) => callback(),
+    register: (options, component) => { coldRegistrations.push({ options, component }); return noop; },
+  });
+  ctx.provide('locale', { register: () => noop, bind: () => key => key });
+} });
+await transportFiber.await();
+const resolverFiber = coldRoot.plugin(native.ModelDirectoryResolver);
+await resolverFiber.await();
+const pickerFiber = coldRoot.plugin(plugin);
+await pickerFiber.await();
+const coldEntry = coldRegistrations.find(entry => entry.options.name === 'conversation.input.model');
+assert.ok(coldEntry, 'navigator must activate without Codex or WorkBuddy');
+const coldFace = coldEntry.options.inject('cold-session');
+assert.equal(coldFace.available, true, JSON.stringify(coldFace.lastError));
+await coldFace.load();
+await Promise.resolve();
+assert.equal(coldFace.directory.getSnapshot().groups.length, 1);
+assert.equal((await coldFace.select({ provider: 'p', model: 'cold-selected' })).ok, true);
+assert.equal(coldFace.directory.getSnapshot().current.model, 'cold-selected');
+assert.equal(coldCalls.length, 1);
+// Recreating a session binding must also create a directory through this path.
+coldOwner = { session: { projections: { faceOf: () => coldProjection } } };
+const reboundFace = coldEntry.options.inject('cold-session');
+assert.notEqual(reboundFace, coldFace);
+assert.equal(reboundFace.available, true, JSON.stringify(reboundFace.lastError));
+assert.notEqual(reboundFace.directory, coldFace.directory);
+await pickerFiber.dispose();
+await resolverFiber.dispose();
+await transportFiber.dispose();
+console.log('PASS: real Cordis + real ModelDirectoryResolver: cold first consumer without Codex/WorkBuddy, shared catalog, selection, recreated binding.');

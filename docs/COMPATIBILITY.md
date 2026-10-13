@@ -1,6 +1,6 @@
 # 接入与兼容性
 
-核对日期：2026-10-13。插件 0.3.0；宿主 DeepSeek Harness Desktop 0.2.0-rc.2。
+核对日期：2026-10-14。插件 0.3.1；宿主 DeepSeek Harness Desktop 0.2.0-rc.2。
 
 ## 模型入口
 
@@ -26,11 +26,11 @@
 
 样式标记 `data-plugin=dsh-model-navigator`，跟随 Cordis effect 清理。槽位注入的生命周期管理注册与偏好订阅。浮层优先使用 `react-dom.createPortal(document.body)`，不可用时内联回退。
 
-`inject` 声明 slots、sessions、modelDirectories 和 locale；可选 settingsScope、cordisInspect 通过 ctx.get 读取。官方模型插件必须保持启用，因为它提供共享目录服务。
+`inject` 声明 slots、sessions、modelDirectories、locale、remote 和 remote.session；可选 settingsScope、cordisInspect 通过 ctx.get 读取。官方模型插件必须保持启用，因为它提供共享目录服务。
 
 ## 验证边界
 
-122 项离线测试覆盖打包产物交互；`tools/verify-host.mjs` 执行本机实际的 SlotCore 与 ModelDirectory，覆盖单入口、开关、Codex 入口先后注册冲突、共享投影、崩溃回退与卸载。该验证模拟 store 通知与 RPC，不能代替桌面点击和真实后端验收。
+124 项离线测试覆盖打包产物交互；`tools/verify-host.mjs` 执行本机实际的 Cordis、SlotCore、ModelDirectory 与 ModelDirectoryResolver，覆盖首次创建目录的依赖门禁、会话绑定重建、单入口、开关、Codex 入口先后注册冲突、共享投影、崩溃回退与卸载。该验证模拟 store 通知与 RPC，不能代替桌面点击和真实后端验收。
 
 浅色主题、超大目录性能、输入法组合输入和所有供应商的真实调用尚未全部验收；不以单测通过宣称“全面领先”。
 
@@ -41,3 +41,7 @@ Codex Subscription 对所有根会话注册 priority -10 的模型入口，非�
 ## 0.3.0 快捷子菜单
 
 收藏夹与最近使用为独立的固定定位浮层，优先放在主菜单右侧，空间不足时向左避让并限制视口尺寸。与主菜单共同 portal 到 body；外部点击检测包含两个浮层。进入子菜单会取消 200ms 的离开关闭计时，Esc/左方向键只关闭子菜单并回到入口，右方向键可打开并聚焦第一项。偏好存储状态只在设置页显示。
+
+## 0.3.1 首次创建目录回归
+
+官方目录服务在创建尚未缓存的会话目录时，间接以调用者上下文读取 `remote.session`。0.3.0 未声明这项依赖，别的选择器预先创建目录时会掩盖缺陷。删除 Codex Subscription 和 WorkBuddy 后，导航器成为第一个目录使用者，入口因此无法解析。0.3.1 声明完整依赖，独立启动不再依赖其他插件的缓存。集成测试将服务提供者与消费者置于真实 Cordis 的不同 fiber，以保留实际依赖检查。

@@ -1,3 +1,14 @@
+# v0.3.1 验证记录
+
+验证日期：2026-10-14。宿主 DeepSeek Harness Desktop 0.2.0-rc.2，macOS。
+
+- 修复前实机入口为 disabled，错误为 `directory-unavailable — cannot get property "remote.session" without inject`。
+- 新增冷目录组件回归在 v0.3.0 下失败，修复后 `npm run check`：124 项通过。另验证已缓存目录可以掩盖缺失依赖。
+- `tools/verify-host.mjs` 新增实际 Cordis 与 ModelDirectoryResolver 测试：服务在不同 provider/consumer fiber 中提供与读取，避免根上下文直接提供服务绕过门禁。旧版本复现同一错误，修复后冷创建、加载、选择和同 ID 的会话绑定重建均通过。
+- 原实际 SlotCore/ModelDirectory 验证继续通过：单入口、共享投影、开关、Codex 入口注册顺序、崩溃退位与卸载。传输和存储通知仍使用模拟边界。
+- 部署前备份 v0.3.0。实机插件详情显示 v0.3.1；插件列表中没有 Codex Subscription 和 WorkBuddy。原禁用入口恢复，可打开目录。
+- 实机选择当前 Magpie · Responses 的模型并提交原 High 档位，菜单关闭；停用并重新启用后再次打开成功。原模型与收藏保留，未发送消息或推理请求。
+
 # v0.3.0 验证记录
 
 验证日期：2026-10-13。新增收藏夹常驻入口、收藏与最近使用悬停子菜单，菜单移除存储说明。

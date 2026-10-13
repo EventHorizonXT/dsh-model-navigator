@@ -545,15 +545,27 @@ function fakeCtx(options = {}) {
       },
     },
     sessions: { subagentAddress: () => undefined },
+    remote: {
+      get session() {
+        accesses.push("remote.session");
+        if (strict && !declared.has("remote.session")) throw new Error('cannot get property "remote.session" without inject');
+        return {};
+      },
+    },
     modelDirectories: {
-      directoryFor: () => ({
+      directoryFor: () => {
+        // The real resolver reads the calling plugin's remote.session only when
+        // constructing a directory. Other pickers can hide a missing dependency.
+        if (options.coldDirectory) void ctx.remote.session;
+        return ({
         store: {
           subscribe: () => () => {},
           getSnapshot: () => SNAPSHOT,
         },
         load: () => Promise.resolve(SNAPSHOT),
         select: (selection) => { selectCalls.push(selection); return Promise.resolve({ ok: true }); },
-      }),
+        });
+      },
     },
     locale: {
       register: (ns, dict) => { localeRegistrations.push([ns, dict]); return () => {}; },
@@ -785,6 +797,33 @@ test("inject(sessionId) returns an identity-stable face and seeds the draft", ()
   assert.equal(typeof first.t, "function");
   assert.equal(typeof first.store.getPreferences, "function");
   assert.equal(typeof first.directory.getSnapshot, "function");
+});
+
+test("first picker can resolve a cold directory without a Codex or WorkBuddy consumer", () => {
+  const { exports, render } = loadBundle(CLIENT);
+  const { ctx, registrations } = fakeCtx({ coldDirectory: true });
+  exports.apply(ctx);
+  const registration = registrations[0];
+  const face = registration.options.inject("cold-session");
+  assert.equal(face.available, true, String(face.lastError));
+  assert.equal(face.reason, null);
+  let tree = render(registration.component(face));
+  const trigger = findElement(tree, n => n.props.className === "dsmn_trigger");
+  assert.equal(trigger.props.disabled, false);
+  trigger.props.onClick();
+  tree = render(registration.component(face));
+  assert.ok(findElement(tree, n => n.props.role === "menu"));
+});
+
+test("a cached directory can mask missing wire dependencies but a cold one cannot", () => {
+  const { exports } = loadBundle(CLIENT);
+  const declared = exports.inject.filter(name => name !== "remote" && name !== "remote.session");
+  const warm = fakeCtx({ declared });
+  exports.apply(warm.ctx);
+  assert.equal(warm.registrations[0].options.inject("warm").available, true);
+  const cold = fakeCtx({ declared, coldDirectory: true });
+  exports.apply(cold.ctx);
+  assert.equal(cold.registrations[0].options.inject("cold").available, false);
 });
 
 test("inject() degrades to unavailable when the session is a subagent address", () => {

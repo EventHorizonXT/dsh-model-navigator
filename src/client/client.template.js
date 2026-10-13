@@ -6,8 +6,8 @@
  * 因此这里只写「宿主 I/O + slot 注册 + React 组件 + 样式 + 词条」，不重复实现纯逻辑。
  *
  * 硬约束：
- *   - 注册 conversation.input.model（priority -5）与 settings.general.item；
- *     替换官方 mf(0)，保留 codex-subscription(-10) 的优先级，关闭增强时注销座位。
+ *   - 注册 conversation.input.model（priority -20）与 settings.general.item；
+ *     替换官方(0)和 codex-subscription(-10) 入口，关闭增强时注销座位。
  *   - Harness Client 包一律「可选 require + 等价回退」：react / react-dom（createPortal，
  *     取不到就内联渲染）/ @deepseek-ai/dsh-client-ui-primitives（取不到就用原生元素）。
  *   - 样式只用 --dsw-alias-* 主题令牌；面板类名沿用官方 ui-model-selection 的 dsmn_ 前缀，
@@ -1459,8 +1459,10 @@ window.__ModuleLoader__.load({
 
     // 客户端 ctx 对属性访问按 inject 声明门禁：未声明的名字读一下就会抛
     // `cannot get property "<name>" without inject`，而 apply 抛错会让整个 client
-    // boot 审计失败（一个插件失败 = 页面起不来）。因此这里必须列出 apply 用到的每一个服务。
-    var inject = ["slots", "sessions", "modelDirectories", "locale"];
+    // boot 审计失败（一个插件失败 = 页面起不来）。也要声明服务方法间接读取的依赖：
+    // ModelDirectoryResolver 在冷创建目录时，以调用者 ctx 读取 remote.session。
+    // 若别的选择器已经创建目录，这条路径会被缓存跳过，掩盖缺少声明的问题。
+    var inject = ["slots", "sessions", "modelDirectories", "locale", "remote", "remote.session"];
 
     /* ==================================================================
      * 现场诊断（只读）
@@ -1474,7 +1476,7 @@ window.__ModuleLoader__.load({
      * ================================================================== */
     var DIAG = {
       plugin: "dsh-model-navigator",
-      version: "0.3.0",
+      version: "0.3.1",
       seat: { priority: -20, enabled: null, registered: false, error: null },
       errors: [],
       events: [],
