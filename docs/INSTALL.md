@@ -7,7 +7,7 @@
 1. 打开 [v0.2.1 Release](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.2.1)。
 2. 下载 `dsh-model-navigator-0.2.1.tgz` 与 `SHA256SUMS`。
 3. 可选：在下载目录运行 `shasum -a 256 -c SHA256SUMS` 核对包。
-4. 在 Desktop 的 **插件 → 添加插件** 中安装下载文件；也可使用宿主工具：
+4. 在 Desktop 的 **插件 → 添加插件** 的“包名或地址”栏填入下载文件的绝对路径进行安装；也可使用宿主工具：
 
    ```text
    plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator-0.2.1.tgz
@@ -20,7 +20,7 @@
 
 ## 更新
 
-安装新版本包后，在插件页关闭再启用模型导航器，重新加载客户端代码。已验证该操作能使 0.2.0 更新为 0.2.1。
+在插件页卸载旧版本，再用“添加插件”安装新的 `.tgz` 文件。宿主目前没有插件自动更新。源码目录链接安装则可以更新目录内容，再关闭和启用插件；已验证该操作能使链接安装从 0.2.0 更新为 0.2.1。
 
 升级前可保留旧版本 `.tgz`。需要回退时停用或卸载当前包，再安装旧包。不要同时使用同一个插件的多个来源。
 

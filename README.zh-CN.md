@@ -29,13 +29,13 @@
 
 ## 安装与更新
 
-从 [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.2.1) 下载 `dsh-model-navigator-0.2.1.tgz`，在 Desktop 的 **插件 → 添加插件** 中安装该文件。也可以把下载文件的绝对路径交给宿主插件管理工具：
+从 [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.2.1) 下载 `dsh-model-navigator-0.2.1.tgz`，在 Desktop 的 **插件 → 添加插件** 的“包名或地址”栏填入下载文件的绝对路径进行安装。也可以把下载文件的绝对路径交给宿主插件管理工具：
 
 ```text
 plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator-0.2.1.tgz
 ```
 
-更新后在插件页关闭再启用模型导航器，重新加载新版本。源码安装、校验值与更新方式见 [安装说明](docs/INSTALL.md)。
+包安装升级时先卸载旧版本，再添加新版本包；源码目录链接更新后，在插件页关闭再启用导航器。源码安装、校验值与更新方式见 [安装说明](docs/INSTALL.md)。
 
 本版覆盖模型与思维强度选择，暂未实现 Codex 专属的速度和输出详略控件。
 

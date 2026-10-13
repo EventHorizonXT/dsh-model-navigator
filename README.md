@@ -16,13 +16,13 @@ A model picker for DeepSeek Harness Desktop with global search, favorites, recen
 
 ## Install
 
-Download `dsh-model-navigator-0.2.1.tgz` from [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.2.1). In DeepSeek Harness Desktop, open **Plugins → Add plugin** and select the downloaded package. The host's plugin manager also accepts its absolute path:
+Download `dsh-model-navigator-0.2.1.tgz` from [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.2.1). In DeepSeek Harness Desktop, open **Plugins → Add plugin** and paste the downloaded package’s absolute path into **Package name or address**. The host's plugin manager also accepts its absolute path:
 
 ```text
 plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator-0.2.1.tgz
 ```
 
-Keep the official model selection plugin enabled: it supplies the shared directory. After updating, disable and re-enable Model Navigator in the plugin page to reload it. See [installation details](docs/INSTALL.md).
+Keep the official model selection plugin enabled: it supplies the shared directory. For a package update, uninstall the old version and add the new tarball. For a source-directory link, rebuild and disable/re-enable the plugin to reload it. See [installation details](docs/INSTALL.md).
 
 ## Compatibility and settings
 
