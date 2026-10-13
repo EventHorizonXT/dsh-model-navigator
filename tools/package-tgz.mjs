@@ -29,7 +29,7 @@ const ENTRIES = [
   "cordis.patch.yml",
   "icon.svg",
   "README.md",
-  "README.zh-CN.md",
+  "README.en.md",
   "THIRD_PARTY_NOTICES.md",
   "CHANGELOG.md",
   "LICENSE",

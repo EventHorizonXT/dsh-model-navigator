@@ -1,88 +1,88 @@
 # DSH Model Navigator
 
-**[中文说明](README.zh-CN.md)** · **[Download v0.3.1](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.1)**
+[English](README.en.md) · **[下载 v0.3.1](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.1)**
 
 [![CI](https://github.com/EventHorizonXT/dsh-model-navigator/actions/workflows/ci.yml/badge.svg)](https://github.com/EventHorizonXT/dsh-model-navigator/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/EventHorizonXT/dsh-model-navigator)](https://github.com/EventHorizonXT/dsh-model-navigator/releases)
 [![License: MIT](https://img.shields.io/github/license/EventHorizonXT/dsh-model-navigator)](LICENSE)
 
-A model picker for DeepSeek Harness Desktop that replaces the composer's model button with global search, favorites, recent selections, model-family navigation and reasoning effort. It reuses the host's shared model directory, so the composer label, the `/model` command and every other picker stay on the same session state.
+DeepSeek Harness Desktop 的模型选择器：用全局搜索、收藏、最近使用、模型家族导航和思维强度，替换输入框里的官方模型按钮。显示、切换与 `/model` 命令共用宿主的会话模型目录，界面始终以宿主 current 为准。
 
-## Features
+## 功能
 
-**Find a model fast**
+**快速找到模型**
 
-- Search every provider at once by display name, real model ID or provider name — no provider preselection needed.
-- Results show the provider label and the real model ID, so models sharing a display name stay distinguishable.
-- A prominent Favorites entry with a live count; no eight-item cap, and the current model is always eligible.
-- A single Recent entry with a count, recorded from your successful selections per provider.
-- Hover, click or press `ArrowRight` to open a submenu; it expands to the right, flips left at the screen edge, and forgives a 200 ms pointer drift.
-- `Esc` and `ArrowLeft` close only the submenu and return focus to its entry.
+- 一次搜索全部供应商，按显示名、真实模型 ID 或供应商名查找，不必先选供应商。
+- 结果同时列出供应商和真实模型 ID，同名模型不会混淆。
+- 醒目的收藏夹入口，数量实时可见，不限制为 8 个，当前模型始终可收藏。
+- 最近使用收在单行入口里并显示数量，按供应商记录成功切换。
+- 悬停、点击或按 `→` 展开子菜单；默认向右展开，靠近屏幕边缘自动左移，指针移动留 200 ms 容错。
+- `Esc` 和 `←` 只关闭子菜单，焦点回到入口本身。
 
-**Navigate the catalog**
+**浏览模型目录**
 
-- Browse provider → model family → model → reasoning effort. The current family is expanded; your other collapse choices are remembered.
-- Three grouping modes: host order (a flat list in the host's own order), channel first and family first.
-- Reasoning effort comes from host metadata; each selection submits one complete `{ provider, model, reasoningEffort? }`.
-- Star any model from its row; unstarring updates the list immediately.
+- 供应商 → 模型家族 → 模型 → 思维强度 逐级浏览；当前所在家族默认展开，其余折叠状态会被记住。
+- 三种分组模式：宿主顺序（按宿主原有顺序平铺）、渠道优先、家族优先。
+- 思维强度档位取自宿主元数据，每次选择原子提交完整的 `{provider, model, reasoningEffort?}`。
+- 在模型行上点星标即可收藏，取消后立即生效。
 
-**Stay consistent with the host**
+**与宿主保持一致**
 
-- Registers the single-slot `conversation.input.model` at priority `-20`, above the official picker (`0`) and the Codex Subscription picker (`-10`) — only one model button appears.
-- Shows a loading state until the host reports a current model, rather than guessing the first row.
-- Disabling or unloading unregisters the slot and the previously active picker returns; a rendering crash is demoted to the next surviving entry.
-- Locked sessions, failed loads with manual retry, rapid clicks and stale connection results are handled without a false "switched" state.
+- 以 priority `-20` 注册 `conversation.input.model` 单入口槽位，高于官方选择器（`0`）与 Codex Subscription（`-10`），输入框只出现一个模型按钮。
+- 宿主尚未给出 current 时显示加载状态，不会把目录第一项误当当前模型。
+- 关闭替换或卸载插件即注销槽位，此前生效的选择器立即恢复；入口渲染崩溃时由宿主退位到下一个存活入口。
+- 锁定会话、目录加载失败（可手动重试）、快速重复点击、过期连接结果均被拦截，不会出现伪装的「已切换」。
 
-## Install
+## 安装
 
-Download `dsh-model-navigator-0.3.1.tgz` from [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.1). In DeepSeek Harness Desktop, open **Plugins → Add plugin** and paste the file's absolute path into **Package name or address**. The host's plugin manager accepts the same path:
+从 [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.1) 下载 `dsh-model-navigator-0.3.1.tgz`，在 Desktop 的 **插件 → 添加插件** 中把文件的绝对路径填入「包名或地址」。宿主的插件管理工具接受同一路径：
 
 ```text
 plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator-0.3.1.tgz
 ```
 
-Keep the official model selection plugin enabled: it supplies the shared directory service and `/model`. This plugin replaces the model entry, not the model account.
+请保持官方模型选择插件开启：它提供共享目录服务和 `/model` 命令。本插件替换的是模型入口，不提供新的模型账户。
 
-For a source-directory install, point the same tool at the repository's local path, and rebuild after code changes:
+源码目录安装则把仓库的本地路径交给同一工具，改代码后重新构建：
 
 ```text
 plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator
 ```
 
-## Update
+## 更新
 
-The host has no automatic plugin update. Uninstall the old version, then add the new `.tgz`; keep the previous tarball for rollback. For a source link, refresh the directory, then disable and re-enable the plugin. Never install the same plugin from two sources. Checksums and rollback steps: [installation details](docs/INSTALL.md).
+宿主没有插件自动更新。升级时先卸载旧版本，再安装新的 `.tgz`，并保留旧包以便回退。源码链接方式更新目录内容后，在插件页关闭再启用即可。不要同时安装同一插件的多个来源。校验值与回退步骤见 [安装说明](docs/INSTALL.md)。
 
-## Compatibility and settings
+## 兼容与设置
 
-Verified with DeepSeek Harness Desktop **0.2.0-rc.2**. Other host versions need their own integration verification.
+已验证宿主：DeepSeek Harness Desktop **0.2.0-rc.2**。其他版本需要重新运行接入验证。
 
-**Settings → General → Model Navigator** offers the replacement toggle, grouping mode, an optional search box for large catalogs, and the active storage tier (plugin settings namespace → browser local storage → memory for this run).
+**设置 → 通用 → 模型导航器** 里可开关替换、切换分组模式、决定大目录是否显示搜索框，并查看当前偏好存储层级（插件设置命名空间 → 浏览器本地存储 → 仅本次运行）。
 
-The replacement outranks the Codex Subscription picker while its subscription and quota services keep running. Codex-specific speed and output-detail controls are not implemented in this version.
+替换启用时优先于 Codex Subscription 的入口，其订阅与配额服务照常运行。本版暂未实现 Codex 专属的速度与输出详略控件。
 
-## Development
+## 开发
 
-Node.js `^22.19.0 || >=24.0.0`; no npm dependencies for building or testing. Release packaging uses BSD tar (tested on macOS).
+构建和测试只需 Node.js `^22.19.0 || >=24.0.0`，无需安装 npm 依赖。打包脚本使用 BSD tar（已在 macOS 验证）。
 
-```sh
-npm run check     # build client + 124 tests
-npm run package   # reproducible tarball + SHA256SUMS in dist/
+```bash
+npm run check     # 构建客户端 + 124 项测试
+npm run package   # 可复现的 tarball + SHA256SUMS，输出到 dist/
 node tools/verify-host.mjs /absolute/path/to/host/node_modules
 ```
 
-`npm run check` builds the client and runs 124 tests against the packaged artifact. `tools/verify-host.mjs` exercises the host's real Cordis, SlotCore, ModelDirectory and ModelDirectoryResolver — service dependencies, session binding, slot election, toggling, crash demotion and unloading — with simulated storage and transport boundaries. CI runs this on Ubuntu and macOS across Node 22 and 24.
+`npm run check` 构建客户端，并对打包产物运行 124 项测试。`tools/verify-host.mjs` 隔离执行宿主实际的 Cordis、SlotCore、ModelDirectory 和 ModelDirectoryResolver，覆盖服务依赖、会话绑定、入口选举、开关、崩溃退位与卸载；存储通知与网络传输用模拟边界。CI 在 Ubuntu 与 macOS、Node 22 与 24 下运行全部检查。
 
-Probe a running client for its version, session, directory, slot registration and recent errors:
+诊断运行中的客户端，查看版本、会话、目录、槽位注册与最近错误：
 
 ```text
 cordis_inspect_query  platform: client  provider: ModelNavigatorDiag  method: probe
 ```
 
-Desktop verification, integration boundaries and remaining coverage live in the [test report](docs/TEST-REPORT.md); also see [compatibility](docs/COMPATIBILITY.md), [development criteria](docs/DEVELOPMENT.md) and [rollback](docs/ROLLBACK.md).
+桌面实机验证、集成边界与待覆盖项见 [测试报告](docs/TEST-REPORT.md)，另见 [兼容性](docs/COMPATIBILITY.md)、[开发验收标准](docs/DEVELOPMENT.md) 和 [回退说明](docs/ROLLBACK.md)。
 
-## Support
+## 反馈
 
-Report bugs in [GitHub Issues](https://github.com/EventHorizonXT/dsh-model-navigator/issues) with plugin and host versions, reproduction steps and a redacted screenshot if useful.
+到 [GitHub Issues](https://github.com/EventHorizonXT/dsh-model-navigator/issues) 反馈问题，请附上插件与宿主版本、复现步骤，以及去除私人信息的截图（如有帮助）。
 
-MIT. Adapted host styles retain the [DeepSeek license notice](THIRD_PARTY_NOTICES.md).
+MIT License。适配的宿主样式保留 [DeepSeek 许可声明](THIRD_PARTY_NOTICES.md)。
