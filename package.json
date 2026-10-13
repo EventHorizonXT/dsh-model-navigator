@@ -1,0 +1,71 @@
+{
+  "name": "dsh-model-navigator",
+  "version": "0.2.1",
+  "private": true,
+  "description": "替换官方通用模型选择器：全局搜索、收藏、最近使用、家族导航和思维强度，复用官方会话模型状态",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib/",
+    "locale/",
+    "src/",
+    "tools/",
+    "tests/",
+    "docs/",
+    "cordis.patch.yml",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "icon.svg",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "meta": {
+    "title": "模型导航器 / Model Navigator",
+    "description": "替换官方通用模型选择器：全局搜索、收藏、最近使用、家族导航和思维强度，复用官方会话模型状态"
+  },
+  "icon": "./icon.svg",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "node tools/build-client.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node tools/build-client.mjs --with-embeds && node --test tests/*.test.mjs",
+    "package": "node tools/package-tgz.mjs"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EventHorizonXT/dsh-model-navigator.git"
+  },
+  "homepage": "https://github.com/EventHorizonXT/dsh-model-navigator#readme",
+  "bugs": {
+    "url": "https://github.com/EventHorizonXT/dsh-model-navigator/issues"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "model-selector",
+    "model-navigator"
+  ]
+}

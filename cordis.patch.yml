@@ -1,0 +1,6 @@
+# dsh-model-navigator bundle 的 Cordis 补丁层。
+#
+# 只插入本插件自己的一行；不修改、不禁用、也不重排任何其他插件的行。
+- insert:
+    - id: model-navigator
+      name: dsh-model-navigator

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+lib/client.with-embeds.js
+.DS_Store
+*.log
+.env
+.env.*
+.agents/
+.codex/
