@@ -2077,3 +2077,187 @@ test("closing the picker clears a pending shortcut hover timer", () => {
   assert.equal(timers.size, 0);
   assert.equal(shortcutMenu(f.open(), "recent"), null, "reopening must not restore a stale hover submenu");
 });
+
+test("unavailable favorites remain visible and individually removable", () => {
+  const f = navigatorFixture();
+  const missing = JSON.stringify(["removed-provider", "step-5-preview"]);
+  const present = JSON.stringify([SNAPSHOT.current.provider, SNAPSHOT.current.model]);
+  f.face.store.patch({ favorites: [missing, present] });
+  shortcutEntry(f.open(), "favorites").props.onClick({ currentTarget: null });
+  const menu = shortcutMenu(f.draw(), "favorites");
+  const row = findElement(menu, n => n.props["data-unavailable-model"] === missing);
+  assert.ok(row, "the saved count must correspond to visible entries, including unavailable ones");
+  assert.match(textOf(row), /step-5-preview/);
+  assert.equal(findElement(row, n => n.props.role === "menuitemradio").props.disabled, true);
+  findElement(row, n => n.props["data-action"] === "favorite-model").props.onClick();
+  assert.deepEqual(plain(f.face.store.getPreferences().favorites), [present]);
+  assert.equal(f.selectCalls.length, 0);
+});
+
+test("malformed saved favorites can be removed without breaking the menu", () => {
+  const f = navigatorFixture();
+  f.face.store.patch({ favorites: ["legacy-key", '{"bad":true}'] });
+  shortcutEntry(f.open(), "favorites").props.onClick({ currentTarget: null });
+  let menu = shortcutMenu(f.draw(), "favorites");
+  assert.equal(collectElements(menu, n => n.props["data-unavailable-model"] !== undefined).length, 2);
+  findElement(menu, n => n.props["data-action"] === "favorite-model").props.onClick();
+  menu = shortcutMenu(f.draw(), "favorites");
+  findElement(menu, n => n.props["data-action"] === "favorite-model").props.onClick();
+  assert.deepEqual(plain(f.face.store.getPreferences().favorites), []);
+});
+
+test("temporarily unavailable favorites return when their model reappears", () => {
+  let snapshot = { ...SNAPSHOT, groups: [] };
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  const key = JSON.stringify([SNAPSHOT.current.provider, SNAPSHOT.current.model]);
+  f.face.store.patch({ favorites: [key] });
+  shortcutEntry(f.open(), "favorites").props.onClick({ currentTarget: null });
+  assert.ok(findElement(shortcutMenu(f.draw(), "favorites"), n => n.props["data-unavailable-model"] === key));
+  snapshot = SNAPSHOT;
+  const menu = shortcutMenu(f.draw(), "favorites");
+  assert.equal(findElement(menu, n => n.props["data-unavailable-model"] !== undefined), null);
+  assert.equal(findElement(menu, n => n.props.role === "menuitemradio").props.disabled, false);
+  assert.deepEqual(plain(f.face.store.getPreferences().favorites), [key]);
+});
+
+test("unavailable recent models can be removed without changing favorites", () => {
+  const f = navigatorFixture();
+  const key = JSON.stringify(["gone", "old-model"]);
+  f.face.store.patch({ favorites: [key], lastProviderId: "gone", lastModelByProvider: { gone: "old-model" } });
+  const entry = shortcutEntry(f.open(), "recent");
+  assert.match(textOf(entry), /1/);
+  entry.props.onClick({ currentTarget: null });
+  const menu = shortcutMenu(f.draw(), "recent");
+  assert.match(textOf(menu), /old-model/);
+  findElement(menu, n => n.props["data-action"] === "remove-recent").props.onClick();
+  assert.deepEqual(plain(f.face.store.getPreferences().lastModelByProvider), {});
+  assert.equal(f.face.store.getPreferences().lastProviderId, undefined);
+  assert.deepEqual(plain(f.face.store.getPreferences().favorites), [key]);
+});
+
+test("removing the open provider returns to the available provider list", () => {
+  let snapshot = SNAPSHOT;
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  f.chooseChat();
+  snapshot = { ...SNAPSHOT, groups: SNAPSHOT.groups.filter(g => g.id !== SNAPSHOT.current.provider) };
+  f.draw();
+  const tree = f.draw();
+  assert.ok(findElement(tree, n => n.props["data-depth"] === "1"));
+  assert.ok(shortcutEntry(tree, "favorites"));
+  assert.equal(f.selectCalls.length, 0);
+});
+
+test("removing the model during effort selection returns to available models", () => {
+  let snapshot = SNAPSHOT;
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  findElement(f.open(), n => n.props["data-depth"] === "3" && textOf(n).includes("DeepSeek Flash")).props.onClick();
+  assert.ok(findElement(f.draw(), n => n.props["data-depth"] === "4"));
+  snapshot = { ...SNAPSHOT, groups: SNAPSHOT.groups.map(g => ({ ...g, models: g.models.filter(m => m.id !== SNAPSHOT.current.model) })) };
+  f.draw();
+  const tree = f.draw();
+  assert.equal(findElement(tree, n => n.props["data-depth"] === "4"), null);
+  assert.ok(findElement(tree, n => n.props["data-depth"] === "3" && textOf(n).includes("DeepSeek Chat")));
+  assert.equal(f.selectCalls.length, 0);
+});
+
+test("old model buttons cannot submit a deleted model before a new render", () => {
+  let snapshot = SNAPSHOT;
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  const stale = f.chooseChat();
+  snapshot = { ...SNAPSHOT, groups: [] };
+  stale.props.onClick();
+  assert.equal(f.selectCalls.length, 0, "read the live directory at click time");
+  assert.match(textOf(f.draw()), /modelUnavailable/);
+});
+
+test("old effort buttons cannot submit a removed reasoning level", () => {
+  let snapshot = SNAPSHOT;
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  findElement(f.open(), n => n.props["data-depth"] === "3" && textOf(n).includes("DeepSeek Flash")).props.onClick();
+  const high = findElement(f.draw(), n => n.props["data-depth"] === "4" && textOf(n).includes("高"));
+  snapshot = { ...SNAPSHOT, groups: SNAPSHOT.groups.map(g => ({ ...g, models: g.models.map(m => m.reasoning ? { ...m, reasoning: { ...m.reasoning, efforts: [{ id: "low", name: "低" }] } } : m) })) };
+  high.props.onClick();
+  assert.equal(f.selectCalls.length, 0);
+  assert.match(textOf(f.draw()), /effortUnavailable/);
+});
+
+test("loading an empty catalog does not announce that the current model disappeared", () => {
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => ({ ...SNAPSHOT, status: "loading", groups: [] }) } });
+  const tree = f.open();
+  assert.equal(findElement(tree, n => n.props.className === "dsmn_status" && textOf(n).includes("currentOutside")), null);
+  assert.match(textOf(tree), /loading/);
+});
+
+test("a missing current model can refresh or switch without pretending to select a default", () => {
+  let loads = 0;
+  const snapshot = { ...SNAPSHOT, current: { provider: "gone", model: "step-5-preview", reasoningEffort: "high" } };
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot }, load: () => { loads++; } });
+  const tree = f.open();
+  assert.equal(f.trigger().props.title, "step-5-preview");
+  const refresh = findElement(tree, n => n.props["data-action"] === "refresh-catalog");
+  assert.ok(refresh);
+  refresh.props.onClick();
+  assert.equal(loads, 2);
+  const search = findElement(f.draw(), n => n.props.role === "searchbox");
+  search.props.onChange({ target: { value: "deepseek-chat" } });
+  findElement(f.draw(), n => n.props["data-depth"] === "3" && textOf(n).includes("DeepSeek Chat")).props.onClick();
+  assert.deepEqual(plain(f.selectCalls), [{ provider: "deepseek-account", model: "deepseek-chat" }]);
+});
+
+test("a model removed during submission is not remembered as an available recent choice", async () => {
+  let snapshot = SNAPSHOT;
+  let finish;
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot }, select: () => new Promise(resolve => { finish = resolve; }) });
+  f.chooseChat().props.onClick();
+  snapshot = { ...SNAPSHOT, groups: [] };
+  finish({ ok: true });
+  await Promise.resolve();
+  assert.equal(f.face.store.getPreferences().lastProviderId, undefined);
+  f.draw();
+  assert.ok(shortcutEntry(f.draw(), "favorites"), "keep recovery navigation open");
+});
+
+test("a missing current model retains the host reasoning effort in the trigger", () => {
+  const snapshot = { ...SNAPSHOT, current: { provider: "gone", model: "removed", reasoningEffort: "high" } };
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  assert.match(textOf(f.trigger()), /high/);
+});
+
+test("temporary loading preserves the effort page until the model returns", () => {
+  let snapshot = SNAPSHOT;
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  findElement(f.open(), n => n.props["data-depth"] === "3" && textOf(n).includes("DeepSeek Flash")).props.onClick();
+  f.draw();
+  snapshot = { ...SNAPSHOT, status: "loading", groups: [] };
+  f.draw();
+  assert.equal(shortcutEntry(f.draw(), "favorites"), null);
+  snapshot = SNAPSHOT;
+  assert.ok(findElement(f.draw(), n => n.props["data-depth"] === "4"));
+  assert.equal(f.selectCalls.length, 0);
+});
+
+test("an empty ready catalog without a current model still offers explicit refresh", () => {
+  const snapshot = { ...SNAPSHOT, current: null, groups: [] };
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  assert.ok(findElement(f.open(), n => n.props["data-action"] === "refresh-catalog"));
+});
+
+test("an open provider with no remaining models shows a useful empty state", () => {
+  let snapshot = SNAPSHOT;
+  const f = navigatorFixture({ directory: { subscribe: () => () => {}, getSnapshot: () => snapshot } });
+  f.chooseChat();
+  snapshot = { ...SNAPSHOT, groups: SNAPSHOT.groups.map(g => ({ ...g, models: [] })) };
+  const tree = f.draw();
+  assert.match(textOf(tree), /emptyCatalog/);
+  assert.equal(f.selectCalls.length, 0);
+});
+
+test("removing an old recent entry does not erase a newer selection for the provider", () => {
+  const f = navigatorFixture();
+  f.face.store.patch({ lastProviderId: "gone", lastModelByProvider: { gone: "old-model" } });
+  shortcutEntry(f.open(), "recent").props.onClick({ currentTarget: null });
+  const remove = findElement(shortcutMenu(f.draw(), "recent"), n => n.props["data-action"] === "remove-recent");
+  f.face.store.rememberSelection({ provider: "gone", model: "new-model" });
+  remove.props.onClick();
+  assert.equal(f.face.store.getPreferences().lastModelByProvider.gone, "new-model");
+});

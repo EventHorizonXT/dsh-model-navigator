@@ -1,88 +1,98 @@
 # DSH Model Navigator
 
-[English](README.en.md) · **[下载 v0.3.1](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.1)**
+[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/EventHorizonXT/dsh-model-navigator/releases)
+[![Host](https://img.shields.io/badge/DeepSeek%20Harness-0.2.0--rc.2-0f172a.svg)](https://github.com/EventHorizonXT/dsh-model-navigator)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-[![CI](https://github.com/EventHorizonXT/dsh-model-navigator/actions/workflows/ci.yml/badge.svg)](https://github.com/EventHorizonXT/dsh-model-navigator/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/EventHorizonXT/dsh-model-navigator)](https://github.com/EventHorizonXT/dsh-model-navigator/releases)
-[![License: MIT](https://img.shields.io/github/license/EventHorizonXT/dsh-model-navigator)](LICENSE)
+简体中文 · [English](./README.en.md) · [下载安装包 (v0.3.2)](https://github.com/EventHorizonXT/dsh-model-navigator/releases/download/v0.3.2/dsh-model-navigator-0.3.2.tgz) · [Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases) · [问题反馈](https://github.com/EventHorizonXT/dsh-model-navigator/issues)
 
-DeepSeek Harness Desktop 的模型选择器：用全局搜索、收藏、最近使用、模型家族导航和思维强度，替换输入框里的官方模型按钮。显示、切换与 `/model` 命令共用宿主的会话模型目录，界面始终以宿主 current 为准。
+**DSH Model Navigator** 是为 **DeepSeek Harness Desktop** 设计的模型选择器插件。它替换聊天输入框中的默认模型选择入口，直接沿用你已有的供应商、账户和模型列表，提供全局搜索、收藏夹、模型家族分组和思维强度切换，并支持随时一键切回原选择器。
 
-## 功能
+---
 
-**快速找到模型**
+## 核心功能
 
-- 一次搜索全部供应商，按显示名、真实模型 ID 或供应商名查找，不必先选供应商。
-- 结果同时列出供应商和真实模型 ID，同名模型不会混淆。
-- 醒目的收藏夹入口，数量实时可见，不限制为 8 个，当前模型始终可收藏。
-- 最近使用收在单行入口里并显示数量，按供应商记录成功切换。
-- 悬停、点击或按 `→` 展开子菜单；默认向右展开，靠近屏幕边缘自动左移，指针移动留 200 ms 容错。
-- `Esc` 和 `←` 只关闭子菜单，焦点回到入口本身。
+- **跨供应商全局搜索**：在所有已配置的供应商中即时搜索模型，支持显示真实模型 ID，方便区分同名或不同版本的模型。
+- **收藏夹与最近使用**：置顶常用模型并自动记录最近使用的模型。两类列表均支持鼠标悬停、点击或键盘展开子菜单；当窗口空间不足时，子菜单会自动调整展开方向。
+- **模型家族导航**：按模型家族归类展示，替代冗长的平铺列表，浏览和定位更直观。
+- **思维强度选择**：直接读取并切换宿主提供的思维强度档位，在选定模型的同时完成档位切换。
+- **配置零迁移**：复用宿主的模型目录与当前会话的选择状态，无需重新配置供应商或账户。
+- **一键恢复原选择器**：可在设置中随时关闭替换；关闭替换、停用或卸载插件后，会自动恢复之前生效的选择器。
 
-**浏览模型目录**
+---
 
-- 供应商 → 模型家族 → 模型 → 思维强度 逐级浏览；当前所在家族默认展开，其余折叠状态会被记住。
-- 三种分组模式：宿主顺序（按宿主原有顺序平铺）、渠道优先、家族优先。
-- 思维强度档位取自宿主元数据，每次选择原子提交完整的 `{provider, model, reasoningEffort?}`。
-- 在模型行上点星标即可收藏，取消后立即生效。
+## 安装与升级
 
-**与宿主保持一致**
+### 环境与前置条件
 
-- 以 priority `-20` 注册 `conversation.input.model` 单入口槽位，高于官方选择器（`0`）与 Codex Subscription（`-10`），输入框只出现一个模型按钮。
-- 宿主尚未给出 current 时显示加载状态，不会把目录第一项误当当前模型。
-- 关闭替换或卸载插件即注销槽位，此前生效的选择器立即恢复；入口渲染崩溃时由宿主退位到下一个存活入口。
-- 锁定会话、目录加载失败（可手动重试）、快速重复点击、过期连接结果均被拦截，不会出现伪装的「已切换」。
+| 项目 | 说明 |
+| :--- | :--- |
+| **插件版本** | `0.3.2` |
+| **已验证宿主版本** | DeepSeek Harness Desktop `0.2.0-rc.2` |
+| **前置要求** | **必须保持官方模型选择插件启用**（它负责提供共享目录服务和 `/model` 命令） |
 
-## 安装
+### 方式一：通过安装包安装（推荐）
 
-从 [GitHub Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.3.1) 下载 `dsh-model-navigator-0.3.1.tgz`，在 Desktop 的 **插件 → 添加插件** 中把文件的绝对路径填入「包名或地址」。宿主的插件管理工具接受同一路径：
+1. 前往 [Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases) 下载安装包 [`dsh-model-navigator-0.3.2.tgz`](https://github.com/EventHorizonXT/dsh-model-navigator/releases/download/v0.3.2/dsh-model-navigator-0.3.2.tgz) 到本地。
+2. 打开 DeepSeek Harness Desktop，进入 **插件 → 添加插件**。
+3. 在 **包名或地址** 栏中填写下载文件的**本地绝对路径**（例如 `/Users/yourname/Downloads/dsh-model-navigator-0.3.2.tgz`），确认添加并启用。
 
-```text
-plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator-0.3.1.tgz
-```
+### 方式二：通过本地源码安装
 
-请保持官方模型选择插件开启：它提供共享目录服务和 `/model` 命令。本插件替换的是模型入口，不提供新的模型账户。
+1. 克隆本仓库并在本地完成构建（详见[开发与构建](#开发与构建)）。
+2. 打开 **插件 → 添加插件**，在 **包名或地址** 栏填写本地仓库目录的绝对路径，确认添加并启用。
 
-源码目录安装则把仓库的本地路径交给同一工具，改代码后重新构建：
+### 升级方式
 
-```text
-plugin_manager action: install_bundle target: /absolute/path/dsh-model-navigator
-```
+- **安装包升级**：先在插件列表中卸载旧版本，再按上述步骤添加新版 `.tgz` 安装包。
+- **源码链接升级**：拉取最新代码并重新构建后，在宿主插件管理页**先关闭再重新启用**插件以加载新产物。
 
-## 更新
+---
 
-宿主没有插件自动更新。升级时先卸载旧版本，再安装新的 `.tgz`，并保留旧包以便回退。源码链接方式更新目录内容后，在插件页关闭再启用即可。不要同时安装同一插件的多个来源。校验值与回退步骤见 [安装说明](docs/INSTALL.md)。
+## 恢复默认选择器
 
-## 兼容与设置
+如果你想切回宿主原有的模型选择器，可通过以下任一方式操作：
 
-已验证宿主：DeepSeek Harness Desktop **0.2.0-rc.2**。其他版本需要重新运行接入验证。
+1. **在设置中关闭替换**：关闭本插件的替换开关后，立即恢复之前生效的选择器，无需卸载插件。
+2. **停用或卸载插件**：在插件管理页停用或卸载本插件，输入框会自动切回之前生效的选择器。
 
-**设置 → 通用 → 模型导航器** 里可开关替换、切换分组模式、决定大目录是否显示搜索框，并查看当前偏好存储层级（插件设置命名空间 → 浏览器本地存储 → 仅本次运行）。
+---
 
-替换启用时优先于 Codex Subscription 的入口，其订阅与配额服务照常运行。本版暂未实现 Codex 专属的速度与输出详略控件。
+## 兼容性与技术说明
 
-## 开发
+### 实现机制
 
-构建和测试只需 Node.js `^22.19.0 || >=24.0.0`，无需安装 npm 依赖。打包脚本使用 BSD tar（已在 macOS 验证）。
+- **槽位与优先级**：插件通过更高优先级接管输入框的模型选择槽位；当关闭替换、停用或卸载时，自动将槽位交还给此前生效的选择器。
+- **状态复用与原子提交**：直接复用宿主共享的模型目录与会话 `current` 状态；在切换模型及思维强度档位时执行原子提交，确保模型与思维强度状态同步更新。
+- **官方插件依赖**：宿主的官方模型选择插件提供底层共享目录服务与 `/model` 命令，使用本插件期间请保持官方插件处于启用状态。
+
+### 已知限制
+
+- 暂未实现 Codex 专属的速度（Speed）与输出详略（Verbosity）控件。
+
+---
+
+## 开发与构建
+
+本项目构建与测试均无需安装外部 npm 依赖（无需执行 `npm install`）。
+
+- **Node.js 要求**：`^22.19.0 || >=24.0.0`
+- **打包环境**：发布包使用 BSD `tar` 打包，已在 macOS 环境验证。
 
 ```bash
-npm run check     # 构建客户端 + 124 项测试
-npm run package   # 可复现的 tarball + SHA256SUMS，输出到 dist/
-node tools/verify-host.mjs /absolute/path/to/host/node_modules
+# 构建插件
+npm run build
+
+# 运行完整验证（包含 140 项测试）
+npm run check
 ```
 
-`npm run check` 构建客户端，并对打包产物运行 124 项测试。`tools/verify-host.mjs` 隔离执行宿主实际的 Cordis、SlotCore、ModelDirectory 和 ModelDirectoryResolver，覆盖服务依赖、会话绑定、入口选举、开关、崩溃退位与卸载；存储通知与网络传输用模拟边界。CI 在 Ubuntu 与 macOS、Node 22 与 24 下运行全部检查。
+更多技术细节与文档请参阅 [`docs/`](./docs/) 目录。
 
-诊断运行中的客户端，查看版本、会话、目录、槽位注册与最近错误：
+---
 
-```text
-cordis_inspect_query  platform: client  provider: ModelNavigatorDiag  method: probe
-```
+## 许可证与声明
 
-桌面实机验证、集成边界与待覆盖项见 [测试报告](docs/TEST-REPORT.md)，另见 [兼容性](docs/COMPATIBILITY.md)、[开发验收标准](docs/DEVELOPMENT.md) 和 [回退说明](docs/ROLLBACK.md)。
-
-## 反馈
-
-到 [GitHub Issues](https://github.com/EventHorizonXT/dsh-model-navigator/issues) 反馈问题，请附上插件与宿主版本、复现步骤，以及去除私人信息的截图（如有帮助）。
-
-MIT License。适配的宿主样式保留 [DeepSeek 许可声明](THIRD_PARTY_NOTICES.md)。
+- **开源协议**：[MIT License](./LICENSE)
+- **第三方声明**：[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+- **反馈与建议**：欢迎提交至 [GitHub Issues](https://github.com/EventHorizonXT/dsh-model-navigator/issues)
