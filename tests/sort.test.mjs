@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildCatalog, familyOrder, familyRows, naturalCompare, orderProviders, sortModelsForDisplay } from "../src/core/sort.mjs";
+import { buildCatalog, familyRows, naturalCompare, orderProviders, sortModelsForDisplay } from "../src/core/sort.mjs";
 import { classifyModel } from "../src/core/classify.mjs";
 import { rankModels, searchModels } from "../src/core/search.mjs";
 
@@ -105,7 +105,7 @@ test("naturalCompare：数值感知、大小写不敏感、稳定决胜", () => 
   assert.ok(naturalCompare("", "a") < 0);
 });
 
-test("familyRows：family-first 按内置家族顺序排列，off 保持宿主原顺序", () => {
+test("familyRows：channel-first 按首次出现排列家族，family-first 按内置家族顺序", () => {
   const origin2 = {
     groups: [
       { id: "p", label: "P", models: [{ id: "space-bunny" }, { id: "gpt-5" }, { id: "claude-sonnet-4-5" }] }
@@ -116,32 +116,6 @@ test("familyRows：family-first 按内置家族顺序排列，off 保持宿主�
   assert.deepEqual(channel.filter((r) => r.kind === "family").map((r) => r.familyId), ["other", "gpt", "claude"]);
   const byFamily = familyRows(catalog.providers[0].models, { mode: "family-first" });
   assert.deepEqual(byFamily.filter((r) => r.kind === "family").map((r) => r.familyId), ["gpt", "claude", "other"]);
-  const off = familyRows(catalog.providers[0].models, { mode: "off" });
-  assert.deepEqual(off.filter((r) => r.kind === "model").map((r) => r.model.ref.modelId), ["space-bunny", "gpt-5", "claude-sonnet-4-5"]);
-});
-
-test("0.1.6 回归：off 模式家族标题随宿主原顺序就地插入，不得归并重排交错家族", () => {
-  // 0.1.5 缺陷：off 模式仍按家族归并（[gpt-5, claude-sonnet, gpt-4o] 被重排成
-  // [gpt-5, gpt-4o, claude-sonnet]）。计划要求 off = 官方原顺序逐行保留。
-  const catalog = buildCatalog(
-    { groups: [{ id: "p", label: "P", models: [{ id: "gpt-5" }, { id: "claude-sonnet-4-5" }, { id: "gpt-4o" }] }] },
-    { classify, favorites: [] }
-  );
-  const off = familyRows(catalog.providers[0].models, { mode: "off" });
-  // 模型行顺序必须与宿主逐行一致（交错保留）：
-  assert.deepEqual(
-    off.filter((r) => r.kind === "model").map((r) => r.model.ref.modelId),
-    ["gpt-5", "claude-sonnet-4-5", "gpt-4o"],
-    "off 模式不得把后面的同家族模型搬到前面"
-  );
-  // 家族标题只在每个家族首个成员处出现一次，且按首次出现位置排列：
-  const headers = off.filter((r) => r.kind === "family").map((r) => r.familyId);
-  assert.deepEqual(headers, ["gpt", "claude"], "每个家族一个标题，按首次出现排列");
-  // 标题后紧跟该家族的首个成员：
-  assert.deepEqual(
-    off.map((r) => (r.kind === "family" ? "F:" + r.familyId : "M:" + r.model.ref.modelId)),
-    ["F:gpt", "M:gpt-5", "F:claude", "M:claude-sonnet-4-5", "M:gpt-4o"]
-  );
 });
 
 test("0.1.3 回归：真实 WorkBuddy 目录按厂商分桶，供应商名取 group.name，未识别的进 other", () => {
@@ -182,11 +156,6 @@ test("familyRows：空列表与单家族", () => {
     { ref: { providerId: "p", modelId: "gpt-4o" }, familyId: "gpt", familyLabel: "GPT" }
   ]);
   assert.deepEqual(single.filter((r) => r.kind === "family").map((r) => r.count), [2]);
-});
-
-test("familyOrder：按首次出现去重", () => {
-  const models = [{ familyId: "gpt", familyLabel: "GPT", familyOrder: 10 }, { familyId: "claude", familyLabel: "Claude", familyOrder: 20 }, { familyId: "gpt", familyLabel: "GPT", familyOrder: 10 }];
-  assert.deepEqual(familyOrder(models).map((f) => f.familyId), ["gpt", "claude"]);
 });
 
 test("U10：冻结的官方目录对象不得被原地修改（分类/排序/搜索都只读）", () => {

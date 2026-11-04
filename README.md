@@ -1,10 +1,10 @@
 # DSH Model Navigator
 
-[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/EventHorizonXT/dsh-model-navigator/releases)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/EventHorizonXT/dsh-model-navigator/releases)
 [![Host](https://img.shields.io/badge/DeepSeek%20Harness-0.2.0--rc.2-0f172a.svg)](https://github.com/EventHorizonXT/dsh-model-navigator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-简体中文 · [English](./README.en.md) · [下载安装包 (v0.3.2)](https://github.com/EventHorizonXT/dsh-model-navigator/releases/download/v0.3.2/dsh-model-navigator-0.3.2.tgz) · [Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases) · [问题反馈](https://github.com/EventHorizonXT/dsh-model-navigator/issues)
+简体中文 · [English](./README.en.md) · [下载安装包 (v0.4.0)](https://github.com/EventHorizonXT/dsh-model-navigator/releases/download/v0.4.0/dsh-model-navigator-0.4.0.tgz) · [Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases) · [问题反馈](https://github.com/EventHorizonXT/dsh-model-navigator/issues)
 
 **DSH Model Navigator** 是为 **DeepSeek Harness Desktop** 设计的模型选择器插件。它替换聊天输入框中的默认模型选择入口，直接沿用你已有的供应商、账户和模型列表，提供全局搜索、收藏夹、模型家族分组和思维强度切换，并支持随时一键切回原选择器。
 
@@ -13,9 +13,13 @@
 ## 核心功能
 
 - **跨供应商全局搜索**：在所有已配置的供应商中即时搜索模型，支持显示真实模型 ID，方便区分同名或不同版本的模型。
-- **收藏夹与最近使用**：置顶常用模型并自动记录最近使用的模型。两类列表均支持鼠标悬停、点击或键盘展开子菜单；当窗口空间不足时，子菜单会自动调整展开方向。
-- **模型家族导航**：按模型家族归类展示，替代冗长的平铺列表，浏览和定位更直观。
-- **思维强度选择**：直接读取并切换宿主提供的思维强度档位，在选定模型的同时完成档位切换。
+- **与官方同构的两级菜单**：根层是「模型 / 思维强度」，模型页集中了搜索、收藏、最近使用和全部模型。点击模型后先选思维强度，没有档位的模型直接切换。
+- **收藏夹与最近使用**：置顶常用模型，并自动列出最近使用的 5 个模型；条目附带供应商与模型 ID。
+- **兼容模型标签插件**：其他插件经官方 `conversation.input.model.label` 槽位提供的标签（如「1017」角标）会照常显示。
+- **供应商与家族两级折叠**：按供应商、再按模型家族归类，默认只展开当前模型所在的供应商和家族，其余只显示名称与数量，替代冗长的平铺列表；展开状态会被记住；收起供应商时，其下的家族一并收回。
+- **层级一眼可辨**：供应商、家族和模型的字号、颜色与缩进导轨各不相同，蓝色只标出当前模型的路径。
+- **不可用项默认隐藏**：已失效的收藏、最近使用和加载失败的供应商收进底部默认折叠的「不可用」分组，只显示数量，需要时展开移除或重试。
+- **思维强度选择**：直接读取并切换宿主提供的思维强度档位，在选定模型的同时完成档位切换。每个模型的档位会被记住，切到别的模型再回来时自动预选。
 - **配置零迁移**：复用宿主的模型目录与当前会话的选择状态，无需重新配置供应商或账户。
 - **一键恢复原选择器**：可在设置中随时关闭替换；关闭替换、停用或卸载插件后，会自动恢复之前生效的选择器。
 
@@ -27,15 +31,15 @@
 
 | 项目 | 说明 |
 | :--- | :--- |
-| **插件版本** | `0.3.2` |
-| **已验证宿主版本** | DeepSeek Harness Desktop `0.2.0-rc.2` |
+| **插件版本** | `0.4.0` |
+| **已验证宿主版本** | DeepSeek Harness Desktop `0.2.0-rc.2`（实机）；`0.2.1-rc.1 / rc.2` 已按宿主源码适配并通过接入测试；`0.2.1-rc.5` 经维护者实机试用，接入测试尚未重跑 |
 | **前置要求** | **必须保持官方模型选择插件启用**（它负责提供共享目录服务和 `/model` 命令） |
 
 ### 方式一：通过安装包安装（推荐）
 
-1. 前往 [Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases) 下载安装包 [`dsh-model-navigator-0.3.2.tgz`](https://github.com/EventHorizonXT/dsh-model-navigator/releases/download/v0.3.2/dsh-model-navigator-0.3.2.tgz) 到本地。
+1. 前往 [Releases](https://github.com/EventHorizonXT/dsh-model-navigator/releases) 下载安装包 [`dsh-model-navigator-0.4.0.tgz`](https://github.com/EventHorizonXT/dsh-model-navigator/releases/download/v0.4.0/dsh-model-navigator-0.4.0.tgz) 到本地。
 2. 打开 DeepSeek Harness Desktop，进入 **插件 → 添加插件**。
-3. 在 **包名或地址** 栏中填写下载文件的**本地绝对路径**（例如 `/Users/yourname/Downloads/dsh-model-navigator-0.3.2.tgz`），确认添加并启用。
+3. 在 **包名或地址** 栏中填写下载文件的**本地绝对路径**（例如 `/Users/yourname/Downloads/dsh-model-navigator-0.4.0.tgz`），确认添加并启用。
 
 ### 方式二：通过本地源码安装
 

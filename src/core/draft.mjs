@@ -34,11 +34,6 @@ export function draftMatches(draft, current, connectionGeneration) {
   return draft.baseSelectionKey === baseSelectionKeyOf(current);
 }
 
-/** 选中项的稳定键：provider 与 model 必须同时相等。 */
-export function draftKeyOf(draft) {
-  return JSON.stringify([draft?.providerId ?? null, draft?.modelId ?? null]);
-}
-
 /**
  * 在草稿、当前选择、目录默认之间解析「现在该显示哪个供应商 / 模型 / 档位」。
  * 优先级：草稿（仍有效）> 当前选择（在目录中仍可寻址）> 目录默认 > 第一个可选。
@@ -122,6 +117,17 @@ export function effortChoices(reasoning, providerDefaultLabel) {
 }
 
 /**
+ * 切到某个模型时预选的档位：上次选过且模型仍提供就沿用，否则回到模型默认档。
+ * 记录可能已过期（宿主撤掉了那一档），不能未经校验就拿去提交。
+ */
+export function preferredEffort(reasoning, remembered) {
+  if (reasoning === null || reasoning === undefined) return undefined;
+  const offered = typeof remembered === "string"
+    && effortChoices(reasoning, "").some((choice) => choice.effort === remembered);
+  return offered ? remembered : reasoning.defaultEffort;
+}
+
+/**
  * 构造唯一一次提交对象。reasoningEffort 为 undefined 时整个键省略。
  * @returns {{provider, model, reasoningEffort?}}
  */
@@ -132,15 +138,4 @@ export function buildSelection(providerId, modelId, effortId) {
     return { provider: providerId, model: modelId };
   }
   return { provider: providerId, model: modelId, reasoningEffort: effortId };
-}
-
-/** 提交后的乐观草稿：成功后 selection 会成为新的 current。 */
-export function draftAfterCommit(draft, selection) {
-  return {
-    ...draft,
-    providerId: selection.provider,
-    modelId: selection.model,
-    effortId: selection.reasoningEffort,
-    baseSelectionKey: baseSelectionKeyOf(selection)
-  };
 }

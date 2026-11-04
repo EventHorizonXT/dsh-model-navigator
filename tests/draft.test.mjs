@@ -6,10 +6,9 @@ import {
   baseSelectionKeyOf,
   buildSelection,
   createDraft,
-  draftAfterCommit,
-  draftKeyOf,
   draftMatches,
   effortChoices,
+  preferredEffort,
   resolveDraft
 } from "../src/core/draft.mjs";
 
@@ -75,11 +74,6 @@ test("草稿有效性：连接换代或基础选择变化即作废", () => {
   assert.equal(draftMatches(null, current, 0), false);
 });
 
-test("draftKeyOf 不把 id 拼串再拆回", () => {
-  assert.equal(draftKeyOf({ providerId: "a/b", modelId: "c" }), '["a/b","c"]');
-  assert.notEqual(draftKeyOf({ providerId: "a", modelId: "b/c" }), draftKeyOf({ providerId: "a/b", modelId: "c" }));
-});
-
 test("resolveDraft：有效草稿优先，其次当前选择", () => {
   const current = state().current;
   const draft = { ...createDraft("s1", current, 0), providerId: "xiaomi", modelId: "mimo-v2.6-pro", effortId: "low" };
@@ -118,11 +112,22 @@ test("resolveDraft：切到无默认档模型时不得沿用旧档位", () => {
   assert.equal(resolved.effortId, undefined, "该模型没有 defaultEffort，应保持未指定");
 });
 
-test("draftAfterCommit 把提交结果写成新的基线", () => {
-  const current = state().current;
-  const draft = createDraft("s1", current, 0);
+test("提交后以 selection 重建草稿：提交结果成为新的基线（客户端 draftStore.commit 的做法）", () => {
   const selection = buildSelection("xiaomi", "mimo-v2.6-pro", "medium");
-  const next = draftAfterCommit(draft, selection);
+  const next = createDraft("s1", selection, 0);
   assert.equal(next.baseSelectionKey, JSON.stringify(["xiaomi", "mimo-v2.6-pro", "medium"]));
   assert.equal(draftMatches(next, selection, 0), true);
+  assert.equal(draftMatches(next, state().current, 0), false, "旧的当前选择不再匹配");
+});
+
+test("preferredEffort：记住的档位仍在就沿用，否则回到模型默认", () => {
+  const reasoning = { efforts: [{ id: "low" }, { id: "high" }], defaultEffort: "low" };
+  assert.equal(preferredEffort(reasoning, "high"), "high");
+  assert.equal(preferredEffort(reasoning, "retired"), "low", "记录过期");
+  assert.equal(preferredEffort(reasoning, undefined), "low", "没记过");
+  const noDefault = { efforts: [{ id: "low" }] };
+  assert.equal(preferredEffort(noDefault, "low"), "low");
+  assert.equal(preferredEffort(noDefault, "retired"), undefined, "没有默认档 = 供应商默认");
+  assert.equal(preferredEffort(undefined, "low"), undefined, "模型没有档位");
+  assert.equal(preferredEffort(null, "low"), undefined);
 });

@@ -39,7 +39,7 @@ export const BUILTIN_FAMILIES = [
   { id: "claude", label: "Claude", order: 20, tokens: ["claude"], prefixes: [] },
   { id: "devin", label: "Devin", order: 30, tokens: ["devin"], prefixes: ["devin/"] },
   { id: "grok", label: "Grok", order: 40, tokens: ["grok"], prefixes: [] },
-  { id: "deepseek", label: "DeepSeek", order: 50, tokens: ["deepseek", "dbrx"], prefixes: [] },
+  { id: "deepseek", label: "DeepSeek", order: 50, tokens: ["deepseek"], prefixes: [] },
   { id: "qwen", label: "Qwen", order: 60, tokens: ["qwen", "qwq"], prefixes: [] },
   { id: "mimo", label: "MiMo", order: 70, tokens: ["mimo", "mimo-v"], prefixes: [] },
   { id: "gemini", label: "Gemini", order: 80, tokens: ["gemini", "gemma", "palm"], prefixes: [] },
@@ -54,6 +54,23 @@ export const BUILTIN_FAMILIES = [
 
 export const FAMILY_BY_ID = new Map(BUILTIN_FAMILIES.map((family) => [family.id, family]));
 
+const TOKEN_PATTERNS = new Map();
+
+function tokenPattern(token) {
+  let pattern = TOKEN_PATTERNS.get(token);
+  if (pattern === undefined) {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    pattern = new RegExp("(^|[^a-z])" + escaped + "([^a-z]|$)");
+    TOKEN_PATTERNS.set(token, pattern);
+  }
+  return pattern;
+}
+
+// 内置家族的 token 在模块加载时就编译好：分类在每次目录变化时对每个模型都要跑一遍。
+for (let f = 0; f < BUILTIN_FAMILIES.length; f += 1) {
+  for (let t = 0; t < BUILTIN_FAMILIES[f].tokens.length; t += 1) tokenPattern(BUILTIN_FAMILIES[f].tokens[t]);
+}
+
 /**
  * 单个 token 在模型 ID 中的边界匹配：
  *   - gpt-5 / gpt-oss-120b / openai/gpt-4o / qwen3-max / mimo2 都命中
@@ -61,8 +78,7 @@ export const FAMILY_BY_ID = new Map(BUILTIN_FAMILIES.map((family) => [family.id,
  * 前边界：只排除小写字母；后边界：排除小写字母（允许数字，才能命中 qwen3）。
  */
 function matchesToken(lowerId, token) {
-  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp("(^|[^a-z])" + escaped + "([^a-z]|$)").test(lowerId);
+  return tokenPattern(token).test(lowerId);
 }
 
 /** 只保留受限 glob 的 * 与 ?，其余正则元字符全部转义。 */

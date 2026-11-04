@@ -2,7 +2,7 @@
  * dsh-model-navigator 客户端半边（模板）。
  *
  * 本文件不直接发布：tools/build-client.mjs 会把 /*__CORE_EMBED__*​/ 处替换成
- * 由 src/core/*.mjs 生成的 ES5 纯逻辑（__core），产出 lib/client.js。
+ * src/core/*.mjs 的纯逻辑（去掉 export 后内联成 __core），并把版本号写进 DIAG，产出 lib/client.js。
  * 因此这里只写「宿主 I/O + slot 注册 + React 组件 + 样式 + 词条」，不重复实现纯逻辑。
  *
  * 硬约束：
@@ -48,6 +48,8 @@ window.__ModuleLoader__.load({
 
     var PREFERENCES_KEY = __core.PREFERENCES_NAMESPACE + ":preferences:v" + __core.PREFERENCES_SCHEMA_VERSION;
     var NOOP = function () {};
+    // 与官方 ModelSelect 一致：目录里超过这么多个模型才显示搜索框
+    var SEARCH_MIN_MODELS = 4;
 
     /* ================================================================== *
      * 词条
@@ -56,8 +58,10 @@ window.__ModuleLoader__.load({
     var DICT = {
       zh: {
         title: "模型导航器",
-        triggerAria: "打开三级模型选择器（供应商 → 模型 → 思维强度）",
-        stepProvider: "选择供应商",
+        triggerAria: "模型",
+        menuModel: "模型",
+        menuAria: "模型与思维强度",
+        effortOpen: "调整思维强度",
         searchPlaceholder: "搜索供应商 / 模型 / 模型 ID",
         searchEmpty: "没有匹配的供应商或模型。",
         providerDefault: "供应商默认",
@@ -68,8 +72,11 @@ window.__ModuleLoader__.load({
         familyOther: "其他",
         providerAccount: "DeepSeek 账户",
         back: "返回",
+        searchClear: "清除搜索",
         close: "关闭",
         loading: "加载中…",
+        refreshing: "正在刷新模型列表…",
+        groupLoadFailed: " 加载失败：",
         retry: "重试加载",
         favorites: "收藏夹",
         favoritesEmpty: "还没有收藏，点击模型旁的星标即可添加。",
@@ -82,7 +89,7 @@ window.__ModuleLoader__.load({
         recentRemove: "移除记录",
         modelUnavailable: "该模型已不在目录中，请选择其他模型或刷新目录。",
         effortUnavailable: "该思维强度已不可用，请重新选择。",
-        modelMissing: "当前不可用",
+        unavailableGroup: "不可用",
         refresh: "刷新目录",
         selecting: "切换中…",
         unavailable: "当前会话不可切换模型",
@@ -91,16 +98,14 @@ window.__ModuleLoader__.load({
         sessionInUse: "该会话正忙，请稍后再试。",
         currentOutside: "当前选择不在模型目录中，请选择其他模型：",
         emptyCatalog: "没有可用的模型。",
-        storageHost: "偏好：插件设置命名空间",
         storageLocal: "偏好：本机浏览器存储",
         storageMemory: "偏好：仅本次运行有效",
-        storageUnavailable: "偏好：宿主持久化不可用",
-        settingsHint: "三级模型选择器：供应商 → 模型（家族分组）→ 思维强度。替换官方通用模型按钮；共享宿主会话状态，支持搜索、收藏和最近使用。关闭后恢复原生入口。",
+        settingsHint: "增强版两级模型选择器：模型 → 思维强度。与官方选择器同样的结构和键盘操作，另有全局搜索、收藏、最近使用、按供应商与家族分组，并显示其他插件提供的模型标签。关闭后恢复原生入口。",
         settingsEnabled: "替换原生模型选择器",
-        settingsGrouping: "供应商顺序",
+        settingsGrouping: "模型排列",
         groupingOff: "宿主顺序",
-        groupingChannel: "渠道优先",
-        groupingFamily: "家族优先",
+        groupingChannel: "按家族分组",
+        groupingFamily: "家族固定顺序",
         settingsShowSearch: "模型较多时显示搜索框",
         settingsStorage: "偏好存储",
         settingsOn: "开",
@@ -110,8 +115,10 @@ window.__ModuleLoader__.load({
       },
       en: {
         title: "Model Navigator",
-        triggerAria: "Open the three-level model selector (provider → model → effort)",
-        stepProvider: "Choose a provider",
+        triggerAria: "Model",
+        menuModel: "Model",
+        menuAria: "Model and reasoning effort",
+        effortOpen: "Adjust reasoning effort",
         searchPlaceholder: "Search provider / model / model id",
         searchEmpty: "No provider or model matches.",
         providerDefault: "Provider default",
@@ -122,8 +129,11 @@ window.__ModuleLoader__.load({
         familyOther: "Other",
         providerAccount: "DeepSeek Account",
         back: "Back",
+        searchClear: "Clear search",
         close: "Close",
         loading: "Loading…",
+        refreshing: "Refreshing model list…",
+        groupLoadFailed: " failed to load: ",
         retry: "Retry loading",
         favorites: "Favorites",
         favoritesEmpty: "No favorites yet. Use the star beside a model to add it.",
@@ -136,7 +146,7 @@ window.__ModuleLoader__.load({
         recentRemove: "Remove from recent",
         modelUnavailable: "This model is no longer in the catalog. Choose another model or refresh.",
         effortUnavailable: "This reasoning level is no longer available. Choose again.",
-        modelMissing: "Currently unavailable",
+        unavailableGroup: "Unavailable",
         refresh: "Refresh catalog",
         selecting: "Switching…",
         unavailable: "This session cannot switch models",
@@ -145,16 +155,14 @@ window.__ModuleLoader__.load({
         sessionInUse: "This session is busy, try again shortly.",
         currentOutside: "Current selection is not in the model catalog. Choose another model: ",
         emptyCatalog: "No models available.",
-        storageHost: "Preferences: plugin settings namespace",
         storageLocal: "Preferences: this browser",
         storageMemory: "Preferences: this run only",
-        storageUnavailable: "Preferences: host persistence unavailable",
-        settingsHint: "Three-level model picker: provider → model (family groups) → reasoning effort. Replaces the native model button using the shared session directory, with search, favorites and recent models. Turn it off to restore the native entry.",
+        settingsHint: "Enhanced two-level model picker: model → reasoning effort. Same structure and keyboard behaviour as the official picker, plus global search, favorites, recent models, provider and family groups, and model labels contributed by other plugins. Turn it off to restore the native entry.",
         settingsEnabled: "Replace the native model picker",
-        settingsGrouping: "Provider order",
+        settingsGrouping: "Model layout",
         groupingOff: "Host order",
-        groupingChannel: "Channel first",
-        groupingFamily: "Family first",
+        groupingChannel: "Group by family",
+        groupingFamily: "Fixed family order",
         settingsShowSearch: "Show a search box when there are many models",
         settingsStorage: "Preference storage",
         settingsOn: "On",
@@ -165,7 +173,8 @@ window.__ModuleLoader__.load({
     };
 
     /* ================================================================== *
-     * 偏好存储：宿主 settingsScope → localStorage → 内存
+     * 偏好存储：localStorage → 内存
+     * 宿主（0.2.1）没有插件自有的设置通道；拿不到 localStorage 时只在本次运行内有效。
      * ================================================================== */
 
     function memoryBackend() {
@@ -201,52 +210,14 @@ window.__ModuleLoader__.load({
       };
     }
 
-    function createPreferencesStore(settingsScope) {
-      var backend = null;
-      var scope = null;
-
-      if (settingsScope !== null && settingsScope !== undefined && typeof settingsScope.bind === "function") {
-        try {
-          var bound = settingsScope.bind({ namespace: __core.PREFERENCES_NAMESPACE });
-          if (bound !== null && bound !== undefined && typeof bound.getSnapshot === "function") {
-            scope = bound;
-            backend = {
-              tier: "host",
-              state: "memory",
-              read: function () {
-                var raw = scope.getSnapshot();
-                return raw === null || raw === undefined || typeof raw !== "object" ? null : raw;
-              },
-              write: function (next) {
-                if (typeof scope.set !== "function") return false;
-                var ok = true;
-                var keys = Object.keys(next);
-                for (var i = 0; i < keys.length; i += 1) {
-                  try {
-                    scope.set(keys[i], next[keys[i]]);
-                  } catch (error) {
-                    ok = false;
-                  }
-                }
-                return ok;
-              }
-            };
-          }
-        } catch (error) {
-          scope = null;
-          backend = null;
-        }
+    function createPreferencesStore() {
+      var storage = null;
+      try {
+        storage = typeof localStorage === "undefined" ? null : localStorage;
+      } catch (error) {
+        storage = null;
       }
-
-      if (backend === null) {
-        var storage = null;
-        try {
-          storage = typeof localStorage === "undefined" ? null : localStorage;
-        } catch (error) {
-          storage = null;
-        }
-        backend = storage === null ? memoryBackend() : browserBackend(storage);
-      }
+      var backend = storage === null ? memoryBackend() : browserBackend(storage);
 
       var current = __core.normalizePreferences(backend.read());
       var listeners = new Set();
@@ -266,19 +237,6 @@ window.__ModuleLoader__.load({
         backend.state = ok ? "persisted" : "memory";
       }
 
-      var unsubscribeScope = NOOP;
-      if (scope !== null && typeof scope.subscribe === "function") {
-        try {
-          var off = scope.subscribe(function () {
-            current = __core.normalizePreferences(backend.read());
-            notify();
-          });
-          if (typeof off === "function") unsubscribeScope = off;
-        } catch (error) {
-          unsubscribeScope = NOOP;
-        }
-      }
-
       return {
         getTier: function () { return backend.tier; },
         getState: function () { return backend.state; },
@@ -286,13 +244,6 @@ window.__ModuleLoader__.load({
         subscribe: function (listener) {
           listeners.add(listener);
           return function () { listeners.delete(listener); };
-        },
-        dispose: function () {
-          try {
-            unsubscribeScope();
-          } catch (error) {
-            /* 忽略 */
-          }
         },
         setPreferences: function (value) {
           current = __core.normalizePreferences(value);
@@ -311,7 +262,16 @@ window.__ModuleLoader__.load({
           if (typeof selection.provider !== "string" || typeof selection.model !== "string") return;
           var map = {};
           map[selection.provider] = selection.model;
-          current = __core.patchPreferences(current, { lastProviderId: selection.provider, lastModelByProvider: map });
+          var efforts = {};
+          // 没带档位 = 这次选的是默认档：删掉旧记录，下次回到模型默认
+          efforts[__core.stableKeyOf({ providerId: selection.provider, modelId: selection.model })] =
+            typeof selection.reasoningEffort === "string" ? selection.reasoningEffort : null;
+          current = __core.patchPreferences(current, {
+            lastProviderId: selection.provider,
+            lastModelByProvider: map,
+            effortByModel: efforts,
+            recentModels: __core.rememberRecent(current.recentModels, selection.provider, selection.model)
+          });
           persist();
           notify();
         }
@@ -342,7 +302,7 @@ window.__ModuleLoader__.load({
       function entryOf(sessionId) {
         var entry = drafts.get(sessionId);
         if (entry === undefined) {
-          entry = { draft: null, seed: null };
+          entry = { draft: null };
           drafts.set(sessionId, entry);
         }
         return entry;
@@ -355,12 +315,6 @@ window.__ModuleLoader__.load({
           listeners.add(listener);
           return function () { listeners.delete(listener); };
         },
-        getSeed: function (sessionId) {
-          return entryOf(sessionId).seed;
-        },
-        seed: function (sessionId, selection) {
-          entryOf(sessionId).seed = selection;
-        },
         ensureDraft: function (sessionId, current) {
           var entry = entryOf(sessionId);
           if (entry.draft === null || !__core.draftMatches(entry.draft, current, generation)) {
@@ -371,7 +325,6 @@ window.__ModuleLoader__.load({
         commit: function (sessionId, selection) {
           var entry = entryOf(sessionId);
           entry.draft = __core.createDraft(sessionId, selection, generation);
-          entry.seed = null;
           notify();
         },
         resetGeneration: function () {
@@ -386,6 +339,10 @@ window.__ModuleLoader__.load({
      * 样式（只用主题令牌）
      * ================================================================== */
 
+    // 前半段 dsmn_ 规则逐条复制自官方 @deepseek-ai/dsh-client-ui-model-selection 0.2.0-rc.2 的
+    // ModelSelect CSS 模块（仅把 cl2Rlq_ 前缀换成 dsmn_），保证与官方面板同款排版/悬停/圆角/令牌；
+    // 例外是搜索框（官方规则作用在包裹层上，这里样式直接落在 input 本身）。
+    // 从 .dsmn_cellBack 起是本插件自有的规则（树形层级、收藏/最近、标签、设置行）。
     var CSS = [
       ".dsmn_root{min-width:0;position:relative}",
       ".dsmn_trigger{border-radius:var(--dsw-radius-sm);min-width:0;max-width:min(360px,45cqw);height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;outline:none;align-items:center;gap:4px;padding:0 4px 0 8px;font-size:13px;font-weight:400;line-height:20px;display:flex}",
@@ -398,20 +355,18 @@ window.__ModuleLoader__.load({
       ".dsmn_triggerLabel,.dsmn_triggerEffort{display:var(--dsh-composer-model-text-display,block)}",
       ".dsmn_chevron{color:var(--dsw-alias-label-caption);flex:none;transition:transform .12s}",
       ".dsmn_chevronOpen{transform:rotate(180deg)}",
-      ".dsmn_menu{z-index:1100;--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);width:max-content;min-width:min(240px,100vw - 32px);max-width:min(420px,100vw - 32px);max-height:min(360px,100vh - 96px);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;flex-direction:column;padding:4px;display:flex;position:fixed;overflow:hidden}",
-      ".dsmn_menu{background:var(--dsw-menu-surface-fill,var(--dsw-alias-bg-layer-2));backdrop-filter:var(--dsw-menu-backdrop-filter);border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg);box-shadow:var(--dsw-elevation-prominent);padding:4px;}",
+      ".dsmn_menu{z-index:1100;--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);width:max-content;min-width:min(240px,100vw - 32px);max-width:min(420px,100vw - 32px);max-height:min(360px,100vh - 96px);background:var(--dsw-menu-surface-fill,var(--dsw-alias-bg-layer-2));backdrop-filter:var(--dsw-menu-backdrop-filter);border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);flex-direction:column;padding:4px;display:flex;position:fixed;overflow:hidden}",
       ".dsmn_status,.dsmn_empty{color:var(--dsw-alias-label-tertiary);padding:8px;font-size:12px;line-height:18px}",
       ".dsmn_error,.dsmn_warning{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover-danger);color:var(--dsw-alias-state-error-primary);justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:3px;padding:6px 7px;font-size:11px;line-height:16px;display:flex}",
       ".dsmn_warning{background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-state-warn-label)}",
       ".dsmn_retry{color:inherit;font:inherit;cursor:pointer;background:0 0;border:none;flex:none;padding:0;font-weight:600}",
-      ".dsmn_searchRow{flex-shrink:0;margin:2px 0 3px;position:relative}",
-      ".dsmn_searchRow .dsmn_search{border-radius:var(--dsw-radius-md);background:0 0;border:0 solid #0000;height:auto;padding:5px 7px;display:flex}",
+      ".dsmn_searchRow{flex-shrink:0;margin:2px 0 4px;position:relative}",
+      ".dsmn_searchRow .dsmn_search{box-sizing:border-box;width:100%;height:30px;padding:0 6px;display:block;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover);border:1px solid #0000;outline:none;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}",
       ".dsmn_searchRow .dsmn_searchWithQuery{padding-right:34px}",
       ".dsmn_searchClear{corner-shape:round;width:24px;height:24px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:50%;justify-content:center;align-items:center;padding:0;display:inline-flex;position:absolute;top:50%;right:4px;transform:translateY(-50%)}",
       ".dsmn_searchClear:hover,.dsmn_searchClear:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}",
-      ".dsmn_searchRow .dsmn_search:focus-within{border-color:#0000}",
-      ".dsmn_searchRow .dsmn_search input{padding:0;font-size:12px;line-height:normal}",
-      ".dsmn_searchRow .dsmn_search input::placeholder{color:var(--dsw-alias-label-caption)}",
+      ".dsmn_searchRow .dsmn_search:focus{border-color:var(--dsw-alias-border-l2)}",
+      ".dsmn_searchRow .dsmn_search::placeholder{color:var(--dsw-alias-label-caption)}",
       ".dsmn_groups{min-height:0;overflow-y:auto}",
       ".dsmn_option{box-sizing:border-box;border-radius:var(--dsw-radius-md);width:auto;min-width:100%;min-height:34px;color:inherit;text-align:left;cursor:pointer;background:0 0;border:none;outline:none;align-items:center;gap:6px;padding:5px 7px;display:flex}",
       ".dsmn_option:not(.dsmn_modelOption):hover:not(:disabled),.dsmn_option:focus-visible,.dsmn_optionActive:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}",
@@ -426,19 +381,7 @@ window.__ModuleLoader__.load({
       ".dsmn_cellLabel{white-space:nowrap;flex:none}",
       ".dsmn_cellValue{text-overflow:ellipsis;white-space:nowrap;text-align:right;min-width:0;color:var(--dsw-alias-label-tertiary);flex:auto;overflow:hidden}",
       ".dsmn_cellChevron{width:12px;height:12px;color:var(--dsw-alias-menu-icon);flex:none}",
-    /* ===== 以下规则逐条复制自官方 @deepseek-ai/dsh-client-ui-model-selection 0.2.0-rc.2 的
-     * ModelSelect CSS 模块（仅把 cl2Rlq_ 前缀换成 dsmn_），以保证与官方面板同款排版/悬停/圆角/令牌。 ===== */
-      ".dsmn-trigger[disabled]{opacity:.5;cursor:default;}",
-      ".dsmn_groupLabel{padding:6px 7px 2px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary);}",
       ".dsmn_cellBack .dsmn_cellChevron{margin-right:2px;}",
-      ".dsmn_shortcuts{flex-shrink:0;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1);padding-bottom:4px;margin-bottom:3px}",
-      ".dsmn_shortcutEntry{height:36px;gap:8px}",
-      ".dsmn_favoritesEntry{color:var(--dsw-alias-state-business-primary);font-weight:600;background:var(--dsw-alias-interactive-bg-hover)}",
-      ".dsmn_shortcutIcon{width:16px;flex:none;text-align:center}",
-      ".dsmn_shortcutCount{margin-left:auto;min-width:18px;text-align:center;font-size:11px;border-radius:6px;padding:1px 4px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}",
-      ".dsmn_shortcutOpen{background:var(--dsw-alias-interactive-bg-hover)}",
-      ".dsmn_shortcutMenu{z-index:1101;box-sizing:border-box;min-width:0;width:300px;max-width:calc(100vw - 16px)}",
-      ".dsmn_shortcutHeading{flex-shrink:0;padding:6px 8px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary)}",
       ".dsmn-setting{display:flex;flex-direction:column;gap:8px;padding:10px 0;}",
       ".dsmn-setting-head{display:flex;align-items:flex-start;gap:12px;}",
       ".dsmn-setting-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}",
@@ -457,20 +400,60 @@ window.__ModuleLoader__.load({
       ".dsmn-choice:hover{color:var(--dsw-alias-label-primary);}",
       ".dsmn-choice[data-active='true']{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);}",
       ".dsmn-choice:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;}",
-      ".dsmn_groupToggle{display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box;padding:6px 8px 4px;background:0 0;border:none;color:var(--dsw-alias-label-caption);font:inherit;font-size:11px;font-weight:600;letter-spacing:.02em;cursor:pointer;text-align:left;border-radius:var(--dsw-radius-sm);}",
+      // 模型页是一棵可折叠的树：字号、字重、颜色、缩进线四路同时变化，层级才一眼可辨。
+      // 字阶：供应商 14/600 > 模型 13/400 > 家族 12/500 > 分区标题 11/600。
+      // 几何：每级 14px，缩进线落在列表左缘 14px、28px；文字落在 26px、40px，与上一级的文字对齐。
+      // 颜色只表达状态：蓝色 = 当前模型所在路径，琥珀色 = 有供应商加载失败。
+      ".dsmn_menu[data-pane=model]{width:min(400px,100vw - 32px)}",
+      ".dsmn_groupToggle{display:flex;align-items:center;gap:6px;width:100%;min-height:26px;box-sizing:border-box;padding:0 7px 0 8px;background:0 0;border:none;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;font-weight:500;line-height:18px;cursor:pointer;text-align:left;border-radius:var(--dsw-radius-sm);}",
       ".dsmn_groupToggle:hover{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);}",
-      ".dsmn_groupChevron{flex:none;color:var(--dsw-alias-label-caption);}",
+      ".dsmn_groupToggle[data-indent='1']{position:relative;width:calc(100% - 20px);margin-left:20px;padding-left:2px;}",
+      ".dsmn_groupChevron{display:inline-flex;align-items:center;justify-content:center;flex:none;width:12px;height:12px;color:var(--dsw-alias-label-caption);transition:transform .12s;}",
+      ".dsmn_providerToggle[aria-expanded=true] .dsmn_groupChevron,.dsmn_groupToggle[aria-expanded=true] .dsmn_groupChevron{transform:rotate(90deg);}",
       ".dsmn_groupLabelText{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-      ".dsmn_groupCount{margin-left:auto;color:var(--dsw-alias-label-caption);font-weight:400;}",
-      ".dsmn_modelRow{display:flex;align-items:center;min-width:0;}",
-      ".dsmn_modelRow>.dsmn_option{min-width:0;flex:1;}",
+      ".dsmn_groupCount{flex:none;margin-left:auto;padding-left:8px;color:var(--dsw-alias-label-caption);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;}",
+      ".dsmn_currentMark{flex:none;width:5px;height:5px;border-radius:50%;background:var(--dsw-alias-state-business-primary);}",
+      ".dsmn_modelRow{display:flex;align-items:center;min-width:0;border-radius:var(--dsw-radius-md);}",
+      ".dsmn_modelRow>.dsmn_option{min-width:0;min-height:30px;padding-top:3px;padding-bottom:3px;flex:1;}",
+      ".dsmn_modelRow[data-active=true]{background:var(--dsw-alias-interactive-bg-hover);}",
+      ".dsmn_modelRow>.dsmn_option:focus-visible,.dsmn_modelRow>.dsmn_optionActive:not(:disabled){background:0 0;}",
+      ".dsmn_modelRow[data-current=true] .dsmn_modelName{font-weight:500;}",
+      ".dsmn_modelRow[data-indent]{position:relative;}",
+      ".dsmn_modelRow[data-indent='1']{margin-left:20px;}",
+      ".dsmn_modelRow[data-indent='2']{margin-left:34px;}",
+      ".dsmn_modelRow[data-indent]>.dsmn_option{padding-left:6px;}",
+      ".dsmn_groupToggle[data-indent]::before,.dsmn_modelRow[data-indent]::before{content:'';position:absolute;top:0;bottom:0;left:-6px;box-sizing:border-box;border-left:1px solid var(--dsw-alias-border-l1);pointer-events:none;}",
+      ".dsmn_modelRow[data-indent='2']::before{left:-20px;width:15px;border-right:1px solid var(--dsw-alias-border-l1);}",
+      ".dsmn_modelRow[data-indent='1'][data-current=true]::before{border-left:2px solid var(--dsw-alias-state-business-primary);}",
+      ".dsmn_modelRow[data-indent='2'][data-current=true]::before{border-right:2px solid var(--dsw-alias-state-business-primary);}",
       ".dsmn_modelMeta{font-size:11px;line-height:16px;color:var(--dsw-alias-label-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-      ".dsmn_favorite{background:transparent;border:0;color:var(--dsw-alias-label-caption);padding:7px;cursor:pointer;flex:none;border-radius:var(--dsw-radius-sm);}",
-      ".dsmn_favorite:hover,.dsmn_favorite:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}",
-      ".dsmn_favorite[aria-pressed=true]{color:var(--dsw-alias-state-business-primary);}",
-      ".dsmn_missingModel .dsmn_option{opacity:.6;cursor:default}",
-      ".dsmn_shortcutTitle{padding:5px 8px;color:var(--dsw-alias-label-caption);font-size:11px;}",
-      ".dsmn_retry{color:inherit;background:transparent;border:0;font:inherit;cursor:pointer;}"
+      ".dsmn_pin,.dsmn_effortOpen{background:transparent;border:0;color:var(--dsw-alias-label-caption);width:26px;height:26px;padding:0;cursor:pointer;flex:none;border-radius:var(--dsw-radius-sm);display:inline-flex;align-items:center;justify-content:center;font-size:13px;}",
+      ".dsmn_pin{visibility:hidden}",
+      ".dsmn_pin:last-child{margin-right:26px}",
+      ".dsmn_modelRow:hover .dsmn_pin,.dsmn_modelRow:focus-within .dsmn_pin,.dsmn_modelRow[data-active=true] .dsmn_pin,.dsmn_pin[aria-pressed=true],.dsmn_pinVisible{visibility:visible}",
+      ".dsmn_pin:hover,.dsmn_pin:focus-visible,.dsmn_effortOpen:hover:not(:disabled),.dsmn_effortOpen:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);outline:none}",
+      ".dsmn_pin[aria-pressed=true]{color:var(--dsw-alias-label-tertiary);}",
+      ".dsmn_effortOpen:disabled{cursor:default;opacity:.5}",
+      ".dsmn_label{min-width:0;display:inline-flex;align-items:center;gap:4px;max-width:100%;overflow:hidden;text-overflow:ellipsis}",
+      ".dsmn_stateDot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--dsw-alias-state-business-primary);animation:dsmn_pulse 1s ease-in-out infinite}",
+      "@keyframes dsmn_pulse{0%,100%{opacity:.35}50%{opacity:1}}",
+      ".dsmn_section+.dsmn_section{margin-top:2px}",
+      // 分隔线只出现在三个区域的交界：快捷入口（收藏、最近）、供应商树、「不可用」
+      ".dsmn_section[data-section=favorites]+.dsmn_section[data-section=provider],.dsmn_section[data-section=recent]+.dsmn_section[data-section=provider],.dsmn_section+.dsmn_section[data-section=unavailable]{margin-top:5px;padding-top:4px;border-top:1px solid var(--dsw-alias-border-l1)}",
+      // 标题不吸顶：菜单是半透明的，吸顶后滚过的行会透出来和标题重叠，叠加的底色还会形成色带
+      ".dsmn_menuGroupLabel{padding:8px 7px 3px;font-size:11px;font-weight:600;line-height:16px;color:var(--dsw-alias-label-caption)}",
+      ".dsmn_providerToggle{display:flex;align-items:center;gap:5px;width:100%;min-height:30px;box-sizing:border-box;padding:0 7px;background:0 0;border:none;border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;font-weight:600;line-height:20px;text-align:left;cursor:pointer}",
+      ".dsmn_providerToggle:hover{background:var(--dsw-alias-interactive-bg-hover)}",
+      ".dsmn_providerToggle .dsmn_groupChevron{width:14px;height:14px;color:var(--dsw-alias-label-tertiary)}",
+      // 「不可用」不是供应商：和分区标题同一字阶，放在底部分隔线之下
+      ".dsmn_section[data-section=unavailable] .dsmn_providerToggle{min-height:24px;color:var(--dsw-alias-label-caption);font-size:11px;font-weight:500;line-height:16px}",
+      ".dsmn_section[data-section=unavailable] .dsmn_providerToggle:hover{color:var(--dsw-alias-label-secondary)}",
+      ".dsmn_section[data-section=unavailable] .dsmn_providerToggle .dsmn_groupChevron{color:var(--dsw-alias-label-caption)}",
+      ".dsmn_providerToggle[data-has-failure=true] .dsmn_groupCount{color:var(--dsw-alias-state-warn-label)}",
+      ".dsmn_section[data-section=unavailable] .dsmn_warning{margin:2px 0 2px 20px}",
+      ".dsmn_missingModel .dsmn_option{cursor:default}",
+      ".dsmn_missingModel .dsmn_modelName{color:var(--dsw-alias-label-tertiary)}",
+      "@media (prefers-reduced-motion:reduce){.dsmn_groupChevron{transition:none}}"
     ].join("");
 
     /* ================================================================== *
@@ -544,6 +527,197 @@ window.__ModuleLoader__.load({
       return h(Comp, props);
     }
 
+    /* ============================================================== *
+     * 模型标签槽位：conversation.input.model.label
+     * 官方 ModelSelect 声明了这个子槽位（single / session / inline），其他插件
+     * （例如给特定模型加角标的插件）往里注册标签组件。我们替换了官方入口，
+     * 不能再声明一次（重复声明会抛），也拿不到只发给声明者的 renderSlot，
+     * 所以直接读 SlotCore 的胜出项，按宿主渲染器的 props 顺序自己渲染：
+     *   entry.inject(sessionId) 的结果 → owner props（provider/model/placement/selected）→ t。
+     * 宿主独有的 hooks 无法复刻；标签组件出错时由边界退回纯文本模型名，并记进 DIAG.label。
+     * ============================================================== */
+    var LABEL_SLOT = "conversation.input.model.label";
+    var IDENTITY_T = function (key) { return key; };
+    var labelFaces = new WeakMap();
+
+    function recordLabelError(error) {
+      try {
+        DIAG.label.errors += 1;
+        DIAG.label.lastError = describeError(error);
+      } catch (ignored) {
+        /* 诊断不能反噬渲染 */
+      }
+    }
+
+    // 官方渲染器每个标签外面都有 SlotErrorBoundary；这里用 React.Component 造一个等价边界。
+    // 取不到 Component 的环境（只在离线替身里出现）就不包边界，错误交给外层宿主边界。
+    var LabelBoundary = null;
+    if (typeof React.Component === "function") {
+      LabelBoundary = function DsmnLabelBoundary(props) {
+        React.Component.call(this, props);
+        this.state = { failed: false };
+      };
+      LabelBoundary.prototype = Object.create(React.Component.prototype);
+      LabelBoundary.prototype.constructor = LabelBoundary;
+      LabelBoundary.getDerivedStateFromError = function () { return { failed: true }; };
+      LabelBoundary.prototype.componentDidCatch = function (error) { recordLabelError(error); };
+      LabelBoundary.prototype.render = function () {
+        if (this.state !== null && this.state !== undefined && this.state.failed === true) {
+          DIAG.label.fallbacks += 1;
+          return this.props.fallback;
+        }
+        return this.props.children;
+      };
+    }
+
+    /** 标签项自己的 inject 结果：与宿主一样按 (entry × sessionId) 缓存，hooks 源无法绑定，直接丢掉。 */
+    function labelFaceOf(entry, sessionId) {
+      if (typeof entry.inject !== "function") return null;
+      var bySession = labelFaces.get(entry);
+      if (bySession === undefined) {
+        bySession = new Map();
+        labelFaces.set(entry, bySession);
+      }
+      if (bySession.has(sessionId)) return bySession.get(sessionId);
+      var face = null;
+      try {
+        var raw = entry.inject(sessionId);
+        if (raw !== null && typeof raw === "object") {
+          face = {};
+          var keys = Object.keys(raw);
+          for (var i = 0; i < keys.length; i += 1) {
+            if (keys[i] !== "hooks" && keys[i] !== "keyedHooks") face[keys[i]] = raw[keys[i]];
+          }
+        }
+      } catch (error) {
+        recordLabelError(error);
+        face = null;
+      }
+      bySession.set(sessionId, face);
+      return face;
+    }
+
+    /** 订阅标签槽位，返回当前胜出项（没有 SlotCore 读接口或没有注册项时为 null）。 */
+    function useLabelEntry(labels) {
+      var slots = labels === null || labels === undefined ? null : labels.slots;
+      var usable = slots !== null && slots !== undefined && typeof slots.entriesOfSlot === "function";
+      var tickRef = React.useRef(0);
+      var subscribe = React.useCallback(
+        function (onChange) {
+          if (!usable || typeof slots.subscribe !== "function") return NOOP;
+          try {
+            var off = slots.subscribe(LABEL_SLOT, function () {
+              tickRef.current += 1;
+              onChange();
+            });
+            return typeof off === "function" ? off : NOOP;
+          } catch (error) {
+            recordLabelError(error);
+            return NOOP;
+          }
+        },
+        [slots, usable]
+      );
+      var read = React.useCallback(
+        function () {
+          if (!usable) return 0;
+          if (typeof slots.getVersion !== "function") return tickRef.current;
+          try {
+            var version = slots.getVersion(LABEL_SLOT);
+            return typeof version === "number" ? version : tickRef.current;
+          } catch (error) {
+            return tickRef.current;
+          }
+        },
+        [slots, usable]
+      );
+      var version = React.useSyncExternalStore(subscribe, read, read);
+      var entry = React.useMemo(
+        function () {
+          if (!usable) return null;
+          try {
+            var list = slots.entriesOfSlot(LABEL_SLOT);
+            if (!Array.isArray(list) || list.length === 0) return null;
+            var first = list[0];
+            if (first === null || first === undefined) return null;
+            var comp = first.component;
+            return typeof comp === "function" || (typeof comp === "object" && comp !== null) ? first : null;
+          } catch (error) {
+            // 官方入口没装时子槽位未声明，entriesOfSlot 可能抛：当作没有标签项
+            return null;
+          }
+        },
+        [slots, usable, version]
+      );
+      DIAG.label.api = usable;
+      DIAG.label.entry = entry === null ? null : labelEntryId(entry);
+      return { entry: entry, version: version };
+    }
+
+    function labelEntryId(entry) {
+      var options = entry.options;
+      if (options !== null && options !== undefined && typeof options.id === "string") return options.id;
+      if (typeof entry.registrant === "string") return entry.registrant;
+      return "anonymous";
+    }
+
+    /** 宿主原始模型对象索引（标签组件按官方契约拿到的是宿主的 model，不是本插件的显示对象）。 */
+    function rawModelIndex(snapshot) {
+      var index = new Map();
+      var groups = snapshot !== null && snapshot !== undefined && Array.isArray(snapshot.groups) ? snapshot.groups : [];
+      for (var g = 0; g < groups.length; g += 1) {
+        var models = Array.isArray(groups[g].models) ? groups[g].models : [];
+        for (var m = 0; m < models.length; m += 1) index.set(JSON.stringify([groups[g].id, models[m].id]), models[m]);
+      }
+      return index;
+    }
+
+    /* ============================================================== *
+     * 模型选择器（0.4.0）：官方 ModelSelect 的「两级」结构 + 增强
+     *   root   ：「模型」「思维强度」两个 cell（与官方一致）
+     *   model  ：搜索框 + 收藏 / 最近使用 / 按供应商分组（家族可折叠）；点模型即切换
+     *   effort ：思维强度；从 root 的 cell 或模型行右侧的 › 进入
+     * 定位、键盘、焦点、busy 语义逐条对照官方 ModelSelect。
+     * ============================================================== */
+    var MEASURE_STYLE = { left: 0, top: 0, visibility: "hidden" };
+    var MENU_MARGIN = 12;
+    var RECENT_VISIBLE = 5;
+    var useLayout = typeof React.useLayoutEffect === "function" ? React.useLayoutEffect : React.useEffect;
+
+    function focusNode(node) {
+      if (node !== null && node !== undefined && typeof node.focus === "function") node.focus();
+    }
+
+    /** 关闭后把焦点还给触发器：官方用 queueMicrotask；沙箱里未必有，Promise 微任务等价。 */
+    function focusLater(ref) {
+      try {
+        Promise.resolve().then(function () { focusNode(ref.current); });
+      } catch (error) {
+        focusNode(ref.current);
+      }
+    }
+
+    function stopEvent(event) {
+      if (event === null || event === undefined) return;
+      if (typeof event.preventDefault === "function") event.preventDefault();
+      if (typeof event.stopPropagation === "function") event.stopPropagation();
+    }
+
+    function caretAtEnd(input) {
+      if (input === null || input === undefined) return true;
+      var value = typeof input.value === "string" ? input.value : "";
+      if (typeof input.selectionStart !== "number") return true;
+      return input.selectionStart === value.length && input.selectionEnd === input.selectionStart;
+    }
+
+    function containsNode(container, node) {
+      return container !== null && container !== undefined && typeof container.contains === "function" && container.contains(node);
+    }
+
+    function stateDot() {
+      return uiNode("StateDot", { state: "ongoing" }, h("span", { className: "dsmn_stateDot", "aria-hidden": "true" }));
+    }
+
     function ModelNavigator(props) {
       var t = props.t;
       var store = props.store;
@@ -571,90 +745,78 @@ window.__ModuleLoader__.load({
       var readDraft = React.useCallback(function () { return draftStore.getVersion(); }, [draftStore]);
       var draftVersion = React.useSyncExternalStore(subscribeDraft, readDraft, readDraft);
 
+      var label = useLabelEntry(props.labels);
+      var labelEntry = label.entry;
+
       var openState = React.useState(false);
       var open = openState[0];
       var setOpen = openState[1];
+      var paneState = React.useState("root");
+      var pane = paneState[0];
+      var setPane = paneState[1];
       var queryState = React.useState("");
       var query = queryState[0];
       var setQuery = queryState[1];
-      var providerState = React.useState(null);
-      var openProvider = providerState[0];
-      var setOpenProvider = providerState[1];
-      var modelState = React.useState(null);
-      var openModel = modelState[0];
-      var setOpenModel = modelState[1];
+      var highlightState = React.useState(null);
+      var highlighted = highlightState[0];
+      var setHighlighted = highlightState[1];
+      // 思维强度页的目标模型（stableKey）与入口（root 的 cell / 模型行的 ›），决定「返回」回到哪一层
+      var effortTargetState = React.useState(null);
+      var effortTarget = effortTargetState[0];
+      var setEffortTarget = effortTargetState[1];
+      var effortFromState = React.useState("root");
+      var effortFrom = effortFromState[0];
+      var setEffortFrom = effortFromState[1];
       var noticeState = React.useState(null);
       var notice = noticeState[0];
       var setNotice = noticeState[1];
       var positionState = React.useState(null);
       var position = positionState[0];
       var setPosition = positionState[1];
-
-      var shortcutState = React.useState(null);
-      var shortcutKind = shortcutState[0];
-      var setShortcutKind = shortcutState[1];
-      var shortcutPositionState = React.useState(null);
-      var shortcutPosition = shortcutPositionState[0];
-      var setShortcutPosition = shortcutPositionState[1];
-      var shortcutRef = React.useRef(null);
-      var shortcutAnchorRef = React.useRef(null);
-      var shortcutTimerRef = React.useRef(null);
-      var shortcutFocusRef = React.useRef(false);
-      var shortcutItemRefs = React.useRef([]);
-      function cancelShortcutClose() {
-        if (shortcutTimerRef.current !== null) clearTimeout(shortcutTimerRef.current);
-        shortcutTimerRef.current = null;
-      }
-      function closeShortcut(restoreFocus) {
-        cancelShortcutClose();
-        setShortcutKind(null);
-        setShortcutPosition(null);
-        if (restoreFocus && shortcutAnchorRef.current !== null && typeof shortcutAnchorRef.current.focus === "function") shortcutAnchorRef.current.focus();
-      }
-      function scheduleShortcutClose() {
-        cancelShortcutClose();
-        shortcutTimerRef.current = setTimeout(function () { shortcutTimerRef.current = null; setShortcutKind(null); setShortcutPosition(null); }, 200);
-      }
-      function openShortcut(kind, event, focusFirst) {
-        cancelShortcutClose();
-        shortcutAnchorRef.current = event === undefined || event.currentTarget === undefined ? null : event.currentTarget;
-        shortcutFocusRef.current = focusFirst === true;
-        setShortcutKind(kind);
-        setQuery("");
-      }
-
-      var rootRef = React.useRef(null);
-      var popoverRef = React.useRef(null);
-      var selectionRef = React.useRef(null);
-      var mountedRef = React.useRef(true);
+      var selectionFocusState = React.useState(false);
+      var selectionFocus = selectionFocusState[0];
+      var setSelectionFocus = selectionFocusState[1];
+      var pendingState = React.useState(null);
+      var pendingSelection = pendingState[0];
+      var setPendingSelection = pendingState[1];
+      var toastState = React.useState(null);
+      var toast = toastState[0];
+      var setToast = toastState[1];
       var submittingState = React.useState(false);
       var submitting = submittingState[0];
       var setSubmitting = submittingState[1];
+
+      var rootRef = React.useRef(null);
+      var triggerRef = React.useRef(null);
+      var searchRef = React.useRef(null);
+      var popoverRef = React.useRef(null);
+      var groupsRef = React.useRef(null);
+      var itemRefs = React.useRef([]);
+      var modelRefs = React.useRef([]);
+      var checkedAtRef = React.useRef(-1);
+      var paneFocus = React.useRef(null);
+      var toastSeq = React.useRef(0);
+      var selectionRef = React.useRef(null);
+      // 宿主 0.2.1 的 select 失败会把整个目录置为 status=error、error="code: message"；
+      // 记下本次选择产生的那条，免得面板把「选择失败」再报成「目录加载失败」
+      var selectErrorRef = React.useRef(null);
+      var mountedRef = React.useRef(true);
       React.useEffect(function () {
         mountedRef.current = true;
         return function () { mountedRef.current = false; selectionRef.current = null; };
       }, []);
-      // 官方 ModelSelect 是「root → model → effort」的浮层面板切换；这里沿用同一套
-      // 面板状态机：providers（供应商）→ models（模型，家族分组）→ effort（思维强度）。
-      var paneState = React.useState("providers");
-      var pane = paneState[0];
-      var setPane = paneState[1];
-      var itemRefs = React.useRef([]);
-      React.useEffect(function () {
-        if (!open || pane !== "providers") {
-          cancelShortcutClose();
-          setShortcutKind(null);
-          setShortcutPosition(null);
-        }
-        return cancelShortcutClose;
-      }, [open, pane, sessionId, draftStore.getGeneration()]);
+
+      var menuId = (typeof React.useId === "function" ? React.useId() : "dsmn-" + String(sessionId)) + "-menu";
+      var baseId = menuId.slice(0, -5);
 
       var current = snapshot === null || snapshot === undefined || snapshot.current === undefined ? null : snapshot.current;
       var status = snapshot === null || snapshot === undefined || snapshot.status === undefined ? "idle" : snapshot.status;
+      var hostPending = snapshot !== null && snapshot !== undefined && snapshot.pending !== null && snapshot.pending !== undefined ? snapshot.pending : null;
       var generation = draftStore.getGeneration();
       React.useEffect(function () {
         selectionRef.current = null;
         setSubmitting(false);
+        setPendingSelection(null);
         setOpen(false);
         setNotice(null);
       }, [sessionId, generation]);
@@ -697,6 +859,7 @@ window.__ModuleLoader__.load({
         },
         [snapshot, overridesKey, rulesKey, favoritesKey, preferences.grouping]
       );
+      var rawModels = React.useMemo(function () { return rawModelIndex(snapshot); }, [snapshot]);
 
       var visibleProviders = React.useMemo(
         function () {
@@ -705,28 +868,89 @@ window.__ModuleLoader__.load({
         [catalog, preferences.grouping, pinsKey]
       );
 
-      var catalogReady = status === "ready" || status === "selecting";
-      React.useEffect(function () {
-        if (!open || !catalogReady) return;
-        if (pane !== "providers" && !catalog.providerOf.has(openProvider)) {
-          setPane("providers");
-          setOpenProvider(null);
-          setOpenModel(null);
-          setQuery("");
-          closeShortcut(false);
-          setNotice(t("modelUnavailable"));
-        } else if (pane === "effort" && !catalog.modelOf.has(openModel)) {
-          setPane("models");
-          setOpenModel(null);
-          setQuery("");
-          setNotice(t("modelUnavailable"));
-        } else if (pane === "effort" && catalog.modelOf.has(openModel)
-          && __core.effortChoices(catalog.modelOf.get(openModel).reasoning, t("providerDefault")).length === 0) {
-          setPane("models");
-          setOpenModel(null);
-          setNotice(t("effortUnavailable"));
+      // 宿主 0.2.1 起后台刷新（改设置/凭据/适配器）与刷新失败都会保留上一份 groups，
+      // 只把 status 置为 loading / error；官方入口在此期间照常可选。
+      var hasGroups = snapshot !== null && snapshot !== undefined && Array.isArray(snapshot.groups) && snapshot.groups.length > 0;
+      var catalogReady = status === "ready" || status === "selecting" || (hasGroups && (status === "loading" || status === "error"));
+      var refreshing = status === "loading" && hasGroups;
+      var failures = snapshot !== null && snapshot !== undefined && Array.isArray(snapshot.failures) ? snapshot.failures : [];
+      var catalogError = status === "error" && !(selectErrorRef.current !== null && snapshot.error === selectErrorRef.current);
+      // 与官方一致：选择进行中触发器仍可点（aria-busy），只有锁定/不可用才禁用
+      var busy = submitting || status === "selecting" || hostPending !== null;
+      var pendingNow = hostPending !== null ? hostPending : pendingSelection;
+
+      var lookupDisplay = function (providerId, modelId) {
+        if (providerId === undefined || providerId === null || modelId === undefined || modelId === null) return undefined;
+        return catalog.modelOf.get(JSON.stringify([providerId, modelId]));
+      };
+      // 触发器显示「宿主公布的当前选择」：不可寻址时显示当前选择自己的 ID，绝不显示别人的名字。
+      var hostCurrent = current;
+      var triggerProviderId = hostCurrent !== null ? hostCurrent.provider : undefined;
+      var triggerModelId = hostCurrent !== null ? hostCurrent.model : undefined;
+      var triggerDisplay = lookupDisplay(triggerProviderId, triggerModelId);
+      // 0.2.1 起宿主直接给出 routable；显式 false 时以宿主为准，其余情况沿用本地查表
+      var currentAddressable = hostCurrent === null || (snapshot.routable !== false && triggerDisplay !== undefined);
+      // 官方 currentChoice：当前选择在目录里且可寻址才算；没有时打开直接进模型页
+      var currentChoice = hostCurrent !== null && currentAddressable ? triggerDisplay : undefined;
+      var triggerLabel = triggerDisplay !== undefined
+        ? __core.modelDisplayName(triggerDisplay, triggerModelId)
+        : triggerModelId;
+      if (hostCurrent === null) triggerLabel = status === "idle" || status === "loading" ? t("loading") : t("title");
+      else if (triggerLabel === undefined || triggerLabel === null || triggerLabel === "") triggerLabel = triggerModelId;
+
+      var currentReasoning = triggerDisplay === undefined ? undefined : triggerDisplay.reasoning;
+      var currentChoices = currentChoice === undefined ? [] : __core.effortChoices(currentReasoning, t("providerDefault"));
+      // 官方 effectiveEffort：宿主当前档位，缺省时取模型默认档（都没有 = 供应商默认）
+      var effectiveEffort = hostCurrent === null ? undefined
+        : hostCurrent.reasoningEffort !== undefined ? hostCurrent.reasoningEffort
+        : currentReasoning === undefined || currentReasoning === null ? undefined : currentReasoning.defaultEffort;
+      var triggerEffortId = hostCurrent !== null ? effectiveEffort : resolved.effortId;
+      var currentEffortLabel = snapshot !== null && snapshot !== undefined && typeof snapshot.retainedEffort === "string" ? snapshot.retainedEffort : null;
+      if (currentReasoning !== undefined && currentReasoning !== null) {
+        var triggerChoices = __core.effortChoices(currentReasoning, t("providerDefault"));
+        for (var tc = 0; tc < triggerChoices.length; tc += 1) {
+          if (triggerChoices[tc].effort === triggerEffortId) {
+            currentEffortLabel = triggerChoices[tc].label;
+            break;
+          }
         }
-      }, [open, pane, openProvider, openModel, snapshot, catalogReady]);
+      }
+      if (currentEffortLabel === null && triggerEffortId !== undefined) currentEffortLabel = triggerEffortId;
+
+      var modelTotal = 0;
+      for (var mt = 0; mt < catalog.providers.length; mt += 1) modelTotal += catalog.providers[mt].models.length;
+      var showSearch = preferences.showSearch && modelTotal > SEARCH_MIN_MODELS && pane === "model";
+      var trimmed = showSearch ? query.trim() : "";
+      // 每次悬停/定位都会重渲染；只有目录或查询变化时才重算全局搜索
+      var hits = React.useMemo(
+        function () { return trimmed.length === 0 ? null : __core.searchModels(visibleProviders, trimmed); },
+        [visibleProviders, trimmed]
+      );
+
+      var effortModel = effortTarget === null ? undefined : catalog.modelOf.get(effortTarget);
+      var effortList = effortModel === undefined ? [] : __core.effortChoices(effortModel.reasoning, t("providerDefault"));
+
+      // 思维强度页的目标模型被移除 / 档位被撤：退回上一层并说明原因；
+      // 目录只是暂时在加载（没有 groups）时保留当前页，等模型回来。
+      React.useEffect(function () {
+        if (!open || pane !== "effort" || !catalogReady) return;
+        if (effortModel === undefined || effortList.length === 0) {
+          setPane(effortFrom === "model" || currentChoice === undefined ? "model" : "root");
+          setEffortTarget(null);
+          setNotice(t(effortModel === undefined ? "modelUnavailable" : "effortUnavailable"));
+        }
+      }, [open, pane, effortTarget, snapshot, catalogReady]);
+
+      // 档位也可能在插件之外改变（/model、其他窗口）：宿主报告的当前档位同样记下，切走再切回时不丢
+      var hostEffort = hostCurrent === null ? undefined : hostCurrent.reasoningEffort;
+      var hostEffortKey = hostCurrent === null ? null : __core.stableKeyOf({ providerId: hostCurrent.provider, modelId: hostCurrent.model });
+      React.useEffect(function () {
+        if (hostEffortKey === null || typeof hostEffort !== "string" || hostEffort === "") return;
+        if (store.getPreferences().effortByModel[hostEffortKey] === hostEffort) return;
+        var entry = {};
+        entry[hostEffortKey] = hostEffort;
+        store.patch({ effortByModel: entry });
+      }, [hostEffortKey, hostEffort]);
 
       // Re-read the directory at event time: an old rendered button can outlive its model.
       function liveModel(providerId, modelId) {
@@ -734,11 +958,11 @@ window.__ModuleLoader__.load({
         var latest;
         try { latest = readDirectory(); }
         catch (error) { setNotice(t("loadFailed") + messageOf(error)); return undefined; }
-        if (latest === null || latest === undefined || latest.status === "idle" || latest.status === "loading") {
+        if (latest === null || latest === undefined) {
           setNotice(t("loading"));
           return undefined;
         }
-        if (latest.status === "error" || latest.status === "selecting") return undefined;
+        if (latest.status === "selecting") return undefined;
         var groups = Array.isArray(latest.groups) ? latest.groups : [];
         for (var gi = 0; gi < groups.length; gi += 1) {
           if (groups[gi].id !== providerId || !Array.isArray(groups[gi].models)) continue;
@@ -746,6 +970,12 @@ window.__ModuleLoader__.load({
             if (groups[gi].models[mi].id === modelId) return groups[gi].models[mi];
           }
         }
+        // 只有在保留的 groups 里也找不到时，才按状态区分「还在加载」与「真的没了」
+        if (latest.status === "idle" || latest.status === "loading") {
+          setNotice(t("loading"));
+          return undefined;
+        }
+        if (latest.status === "error") return undefined;
         setNotice(t("modelUnavailable"));
         return undefined;
       }
@@ -755,121 +985,95 @@ window.__ModuleLoader__.load({
         function () {
           if (!available) return;
           if (status !== "idle") return;
-          if (props.load === undefined) return;
+          if (props.load === undefined || props.load === null) return;
           props.load();
         },
         [available, status, sessionId]
       );
 
-      // 打开时装载目录、定位到当前选择
+      // 打开时刷新一次目录（官方 show() 里的 reload）
       React.useEffect(
         function () {
           if (!open) return;
-          if (available && props.load !== undefined) props.load();
-          var nextDraft = draftStore.ensureDraft(sessionId, current);
-          var nextResolved = __core.resolveDraft(nextDraft, snapshot, { connectionGeneration: generation });
-          setOpenProvider(nextResolved.providerId === undefined ? null : nextResolved.providerId);
-          setOpenModel(nextResolved.modelId === undefined ? null : JSON.stringify([nextResolved.providerId, nextResolved.modelId]));
-          setNotice(null);
+          if (available && props.load !== undefined && props.load !== null) props.load();
         },
         [open]
       );
 
-      // 浮层定位：优先上方，空间不足翻转到下方
-      React.useEffect(
+      // 浮层定位（与官方一致）：右边缘对齐触发器、出现在上方 8px，四周留 12px 夹紧；
+      // 窗口缩放 / 祖先滚动 / 浮层自身尺寸变化时重算。位置没变时保留旧对象，避免无谓重渲染。
+      useLayout(
         function () {
-          if (!open) return;
-          var anchor = rootRef.current;
-          if (anchor === null || typeof anchor.getBoundingClientRect !== "function") return;
-          var rect = anchor.getBoundingClientRect();
-          var popover = popoverRef.current;
-          // 只记录，不改行为：现场确认浮层真正的 DOM 父亲是谁。
-          // 走 createPortal 时应为 body；若为槽位节点则说明祖先 transform 仍可能裁掉面板。
-          if (popover !== null && popover !== undefined) {
-            var panelParent = popover.parentNode;
-            var parentSlot = panelParent !== null && panelParent !== undefined && typeof panelParent.getAttribute === "function" ? panelParent.getAttribute("data-slot") : null;
-            if (panelParent === null || panelParent === undefined) DIAG.dom.panelAncestorSlot = "detached";
-            else if (panelParent === document.body) DIAG.dom.panelAncestorSlot = "body";
-            else DIAG.dom.panelAncestorSlot = String(panelParent.tagName === undefined ? "?" : panelParent.tagName).toLowerCase() + (parentSlot === null ? "" : "[data-slot=" + parentSlot + "]");
+          if (!available || !open) {
+            setPosition(null);
+            return undefined;
           }
-          var measured = popover === null || typeof popover.getBoundingClientRect !== "function" ? null : popover.getBoundingClientRect();
-          var height = measured === null || measured.height === 0 ? 320 : measured.height;
-          var width = measured === null || measured.width === 0 ? 300 : measured.width;
-          var roomAbove = rect.top - 12;
-          var roomBelow = window.innerHeight - rect.bottom - 12;
-          var openUp = roomAbove >= Math.min(height, 260) || roomAbove > roomBelow;
-          var left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-          if (openUp) setPosition({ left: left, bottom: Math.max(8, window.innerHeight - rect.top + 6) });
-          else setPosition({ left: left, top: Math.max(8, Math.min(window.innerHeight - 16, rect.bottom + 6)) });
+          function placeMenu() {
+            var trigger = triggerRef.current;
+            if (trigger === null || trigger === undefined || typeof trigger.getBoundingClientRect !== "function") return;
+            var rect = trigger.getBoundingClientRect();
+            var popover = popoverRef.current;
+            // 只记录，不改行为：现场确认浮层真正的 DOM 父亲是谁。
+            // 走 createPortal 时应为 body；若为槽位节点则说明祖先 transform 仍可能裁掉面板。
+            if (popover !== null && popover !== undefined) {
+              var panelParent = popover.parentNode;
+              var parentSlot = panelParent !== null && panelParent !== undefined && typeof panelParent.getAttribute === "function" ? panelParent.getAttribute("data-slot") : null;
+              if (panelParent === null || panelParent === undefined) DIAG.dom.panelAncestorSlot = "detached";
+              else if (panelParent === document.body) DIAG.dom.panelAncestorSlot = "body";
+              else DIAG.dom.panelAncestorSlot = String(panelParent.tagName === undefined ? "?" : panelParent.tagName).toLowerCase() + (parentSlot === null ? "" : "[data-slot=" + parentSlot + "]");
+            }
+            var width = popover !== null && popover !== undefined && typeof popover.offsetWidth === "number" ? popover.offsetWidth : 0;
+            var height = popover !== null && popover !== undefined && typeof popover.offsetHeight === "number" ? popover.offsetHeight : 0;
+            var viewportWidth = typeof window.innerWidth === "number" ? window.innerWidth : 0;
+            var viewportHeight = typeof window.innerHeight === "number" ? window.innerHeight : 0;
+            var x = rect.right - width;
+            var y = rect.top - 8 - height;
+            if (width > 0 && viewportWidth > 0) x = Math.min(Math.max(x, MENU_MARGIN), viewportWidth - width - MENU_MARGIN);
+            if (height > 0 && viewportHeight > 0) y = Math.min(Math.max(y, MENU_MARGIN), viewportHeight - height - MENU_MARGIN);
+            setPosition(function (prev) {
+              return prev !== null && prev !== undefined && prev.left === x && prev.top === y ? prev : { left: x, top: y };
+            });
+          }
+          placeMenu();
+          if (typeof window.addEventListener === "function") {
+            window.addEventListener("scroll", placeMenu, true);
+            window.addEventListener("resize", placeMenu);
+          }
+          var observer = null;
+          try {
+            if (typeof ResizeObserver !== "undefined" && popoverRef.current !== null && popoverRef.current !== undefined) {
+              observer = new ResizeObserver(placeMenu);
+              observer.observe(popoverRef.current);
+            }
+          } catch (error) {
+            observer = null;
+          }
+          return function () {
+            if (observer !== null) observer.disconnect();
+            if (typeof window.removeEventListener === "function") {
+              window.removeEventListener("scroll", placeMenu, true);
+              window.removeEventListener("resize", placeMenu);
+            }
+          };
         },
-        [open, snapshot, query, openProvider, openModel, notice]
+        [available, open, pane, snapshot, query, notice, effortTarget]
       );
 
-      // Separate fixed surface avoids clipping by the main menu's scrolling content.
-      React.useEffect(function () {
-        if (!open || shortcutKind === null || pane !== "providers") return;
-        function placeShortcut() {
-          var anchor = shortcutAnchorRef.current;
-          var menu = popoverRef.current;
-          var submenu = shortcutRef.current;
-          if (anchor === null || menu === null || submenu === null || typeof anchor.getBoundingClientRect !== "function") return;
-          var a = anchor.getBoundingClientRect();
-          var m = menu.getBoundingClientRect();
-          var bounds = submenu.getBoundingClientRect();
-          // The list can already be constrained by a previous submenu's maxHeight.
-          // Measure its full scroll content so switching lists can grow the surface.
-          var content = typeof submenu.querySelector === "function" ? submenu.querySelector(".dsmn_groups") : null;
-          var naturalHeight = content === null ? Math.max(submenu.scrollHeight || 0, bounds.height || 200)
-            : content.offsetTop + content.scrollHeight + 5;
-          var next = __core.shortcutMenuPosition({ left: m.left, right: m.right, top: a.top },
-            { width: bounds.width || 300, height: naturalHeight },
-            { width: window.innerWidth, height: window.innerHeight });
-          setShortcutPosition(next);
-          if (shortcutFocusRef.current && shortcutItemRefs.current.length > 0) {
-            shortcutFocusRef.current = false;
-            var first = shortcutItemRefs.current[0];
-            if (first !== null && first !== undefined && typeof first.focus === "function") first.focus();
-          }
-        }
-        placeShortcut();
-        if (typeof window.addEventListener === "function") window.addEventListener("resize", placeShortcut);
-        document.addEventListener("scroll", placeShortcut, true);
-        return function () {
-          if (typeof window.removeEventListener === "function") window.removeEventListener("resize", placeShortcut);
-          document.removeEventListener("scroll", placeShortcut, true);
-        };
-      }, [open, pane, shortcutKind, position, favoritesKey, snapshot]);
-
-      // 外部点击 / Esc 关闭。
-      // Escape 层级（0.1.6 起）：菜单内部处理器（清空搜索 → 面板返回上级）先吃掉
-      // 自己那一层；这里的 document 捕获监听只在「Esc 没被菜单消化」时才关整个菜单。
-      // 0.1.5 及以前捕获监听无条件 setOpen(false)，模型层按 Esc 直接整层关闭，
-      // 返回上级的 onMenuKeyDown 根本没机会执行。
+      // 外部点击 / 菜单外的 Esc 关闭。菜单内的 Esc 由根节点 onKeyDown 按层级消化
+      // （清空搜索 → 返回上一层 → 关闭），这里的捕获监听只处理焦点不在菜单里的情况。
       React.useEffect(
         function () {
           if (!open) return undefined;
           var onPointerDown = function (event) {
-            var root = rootRef.current;
-            if (root !== null && typeof root.contains === "function" && root.contains(event.target)) return;
-            var menu = popoverRef.current;
-            if (menu !== null && menu !== undefined && typeof menu.contains === "function" && menu.contains(event.target)) return;
-            var shortcut = shortcutRef.current;
-            if (shortcut !== null && typeof shortcut.contains === "function" && shortcut.contains(event.target)) return;
+            if (containsNode(rootRef.current, event.target) || containsNode(popoverRef.current, event.target)) return;
             setOpen(false);
+            setPane("root");
           };
           var onKeyDown = function (event) {
             if (event.key !== "Escape") return;
-            var menu = popoverRef.current;
-            if (menu !== null && menu !== undefined && typeof menu.contains === "function" && menu.contains(event.target)) {
-              // 目标在浮层里：菜单自己的 onKeyDown（stopPropagation）负责消化，
-              // 但捕获监听先于它运行，所以这里不能关——置位后由冒泡阶段决定去留。
-              return;
-            }
-            var shortcut = shortcutRef.current;
-            if (shortcut !== null && typeof shortcut.contains === "function" && shortcut.contains(event.target)) return;
-            var root = rootRef.current;
-            if (root !== null && typeof root.contains === "function" && root.contains(event.target)) return;
+            if (containsNode(rootRef.current, event.target) || containsNode(popoverRef.current, event.target)) return;
             setOpen(false);
+            setPane("root");
           };
           document.addEventListener("pointerdown", onPointerDown, true);
           document.addEventListener("keydown", onKeyDown, true);
@@ -881,99 +1085,37 @@ window.__ModuleLoader__.load({
         [open]
       );
 
-      var commit = React.useCallback(
-        function (providerId, modelId, effortId) {
-          if (!available || locked || submitting || status === "selecting" || selectionRef.current !== null || props.select === undefined) return;
-          var selection;
-          try { selection = __core.buildSelection(providerId, modelId, effortId); }
-          catch (error) { setNotice(messageOf(error)); return; }
-          var latestModel = liveModel(providerId, modelId);
-          if (latestModel === undefined) return;
-          if (selection.reasoningEffort !== undefined) {
-            var latestEfforts = __core.effortChoices(latestModel.reasoning, t("providerDefault"));
-            if (!latestEfforts.some(function (choice) { return choice.effort === selection.reasoningEffort; })) {
-              setNotice(t("effortUnavailable"));
+      // 打开 / 换页后的焦点（对照官方）：下钻进模型页聚焦搜索框，否则聚焦已勾选的行；
+      // 返回根层时聚焦来时的 cell。首次打开时浮层在定位前是 visibility:hidden，
+      // focus() 会被忽略，所以要等 placed。
+      var placed = position !== null;
+      React.useEffect(
+        function () {
+          if (!open || !placed) return;
+          var intent = paneFocus.current;
+          if (intent === null) return;
+          paneFocus.current = null;
+          if (intent === "drill") {
+            if (pane === "model" && showSearch && searchRef.current !== null && searchRef.current !== undefined) {
+              focusNode(searchRef.current);
               return;
             }
+            var checked = checkedAtRef.current >= 0 ? itemRefs.current[checkedAtRef.current] : null;
+            if (checked !== null && checked !== undefined && checked.disabled !== true) { focusNode(checked); return; }
+            for (var fi = 0; fi < itemRefs.current.length; fi += 1) {
+              var item = itemRefs.current[fi];
+              if (item !== null && item !== undefined && item.disabled !== true) { focusNode(item); return; }
+            }
+            focusNode(triggerRef.current);
+            return;
           }
-          var operation = { sessionId: sessionId, generation: draftStore.getGeneration() };
-          selectionRef.current = operation;
-          setSubmitting(true);
-          setNotice(null);
-          var active = function () {
-            return mountedRef.current && selectionRef.current === operation
-              && operation.generation === draftStore.getGeneration();
-          };
-          var settle = function (outcome, error) {
-            if (!active()) return;
-            selectionRef.current = null;
-            setSubmitting(false);
-            if (error !== undefined || outcome === false || (outcome !== null && outcome !== undefined && outcome.ok === false)) {
-              var failure = error !== undefined ? error : outcome === false ? t("unavailable") : outcome.error;
-              var code = failure !== null && failure !== undefined ? failure.code : undefined;
-              setNotice(code === "session/writer-held" || messageOf(failure).indexOf("session/writer-held") >= 0
-                ? t("sessionInUse") : t("selectFailed") + messageOf(failure));
-              return;
-            }
-            if (liveModel(providerId, modelId) === undefined) return;
-            draftStore.commit(sessionId, selection);
-            store.rememberSelection(selection);
-            setOpen(false);
-          };
-          try {
-            var result = props.select(selection);
-            if (result !== null && result !== undefined && typeof result.then === "function") {
-              result.then(function (value) { settle(value); }, function (error) { settle(undefined, error); });
-            } else settle(result);
-          } catch (error) { settle(undefined, error); }
+          var cell = itemRefs.current[intent === "effort" ? 1 : 0];
+          focusNode(cell !== null && cell !== undefined && cell.disabled !== true ? cell : triggerRef.current);
         },
-        [available, locked, submitting, status, props.select, sessionId, generation, directory, store, draftStore, t]
+        [open, pane, placed, showSearch]
       );
 
       if (preferences.enabled === false) return null;
-
-      var lookupDisplay = function (providerId, modelId) {
-        if (providerId === undefined || providerId === null || modelId === undefined || modelId === null) return undefined;
-        if (catalog.modelOf === undefined || catalog.modelOf === null) return undefined;
-        return catalog.modelOf.get(JSON.stringify([providerId, modelId]));
-      };
-      // 触发器显示「宿主公布的当前选择」。resolveDraft 在宿主当前模型不在本目录里时会退到
-      // 目录默认或第一个模型——那样触发器会显示成另一个模型，与原生入口并存时看起来像切错了
-      // （用户截图：我们的药丸显示 Kimi-K3，原生药丸显示 DeepSeek-V41-Flash）。0.1.4 起：
-      // 不可寻址时显示当前选择自己的 ID，绝不显示别人的名字，并在面板里标注。
-      var hostCurrent = snapshot === null || snapshot === undefined || snapshot.current === undefined ? null : snapshot.current;
-      var triggerProviderId = hostCurrent !== null ? hostCurrent.provider : undefined;
-      var triggerModelId = hostCurrent !== null ? hostCurrent.model : undefined;
-      var triggerDisplay = lookupDisplay(triggerProviderId, triggerModelId);
-      var triggerModel = triggerDisplay !== undefined
-        ? triggerDisplay
-        : undefined;
-      var currentAddressable = hostCurrent === null || triggerDisplay !== undefined;
-      var triggerLabel = triggerDisplay !== undefined && triggerDisplay !== null
-        ? (triggerDisplay.alias !== undefined && triggerDisplay.alias !== null && triggerDisplay.alias !== ""
-            ? triggerDisplay.alias
-            : triggerDisplay.originalName)
-        : __core.modelDisplayName(triggerModel, triggerModelId);
-      if (hostCurrent === null) triggerLabel = status === "idle" || status === "loading" ? t("loading") : t("title");
-      else if (triggerLabel === undefined || triggerLabel === null || triggerLabel === "") triggerLabel = triggerModelId;
-
-      var currentReasoning = triggerModel === undefined || triggerModel === null ? undefined : triggerModel.reasoning;
-      var triggerEffortId = hostCurrent !== null
-        ? (hostCurrent.reasoningEffort !== undefined
-            ? hostCurrent.reasoningEffort
-            : (currentReasoning === undefined || currentReasoning === null ? undefined : currentReasoning.defaultEffort))
-        : resolved.effortId;
-      var currentEffortLabel = snapshot !== null && snapshot !== undefined && typeof snapshot.retainedEffort === "string" ? snapshot.retainedEffort : null;
-      if (triggerEffortId !== undefined && currentReasoning !== undefined && currentReasoning !== null) {
-        var triggerChoices = __core.effortChoices(currentReasoning, t("providerDefault"));
-        for (var tc = 0; tc < triggerChoices.length; tc += 1) {
-          if (triggerChoices[tc].effort === triggerEffortId) {
-            currentEffortLabel = triggerChoices[tc].label;
-            break;
-          }
-        }
-      }
-      if (currentEffortLabel === null && triggerEffortId !== undefined) currentEffortLabel = triggerEffortId;
 
       // 诊断：把「宿主当前选择 / 触发器实际显示 / 草稿解析结果」一并记下，
       // 用来区分「我们显示错了」与「别的入口没刷新」。
@@ -998,439 +1140,817 @@ window.__ModuleLoader__.load({
         }
       };
 
-      var trimmed = query.trim();
-      var hits = trimmed.length === 0 ? null : __core.searchModels(visibleProviders, trimmed);
-      var shownProviders = trimmed.length === 0 ? visibleProviders : __core.filterProviders(visibleProviders, trimmed);
-      var rows = [];
-      var shortcutRows = [];
-      var shortcutModels = [];
-      shortcutItemRefs.current = [];
-      var shortcutItemIndex = 0;
-      function shortcutItemRef() {
-        var at = shortcutItemIndex++;
-        return function (node) { shortcutItemRefs.current[at] = node; };
+      /* ---------------- 动作 ---------------- */
+
+      function close(restoreFocus) {
+        setOpen(false);
+        setPane("root");
+        setQuery("");
+        setHighlighted(null);
+        setEffortTarget(null);
+        if (restoreFocus) focusLater(triggerRef);
+      }
+      function closeAfterSelection() {
+        setSelectionFocus(true);
+        close(true);
+      }
+      function show() {
+        setSelectionFocus(false);
+        setQuery("");
+        setHighlighted(null);
+        setNotice(null);
+        setEffortTarget(null);
+        paneFocus.current = currentChoice === undefined ? "drill" : "root";
+        setPane(currentChoice === undefined ? "model" : "root");
+        setOpen(true);
+      }
+      function drill(next) {
+        setQuery("");
+        setHighlighted(null);
+        paneFocus.current = "drill";
+        setPane(next);
+      }
+      function openEffort(model, from) {
+        setEffortTarget(model.stableKey === undefined ? __core.stableKeyOf(model.ref) : model.stableKey);
+        setEffortFrom(from);
+        drill("effort");
+      }
+      function canBack() {
+        if (pane === "effort") return effortFrom === "model" || currentChoice !== undefined;
+        return pane === "model" && currentChoice !== undefined;
+      }
+      function back() {
+        if (pane === "effort" && (effortFrom === "model" || currentChoice === undefined)) {
+          setEffortTarget(null);
+          drill("model");
+          return;
+        }
+        paneFocus.current = pane === "effort" ? "effort" : "root";
+        setQuery("");
+        setHighlighted(null);
+        setEffortTarget(null);
+        setPane("root");
+      }
+      function changeQuery(next) {
+        setQuery(next);
+        // 有查询时第一条命中即高亮（Enter 即选）；清空查询后回到当前模型
+        setHighlighted(next === "" ? null : 0);
+      }
+      function showToast(text) {
+        if (uiComponent("Toast") === null) return;
+        toastSeq.current += 1;
+        setToast({ seq: toastSeq.current, text: text });
+      }
+
+      function commit(providerId, modelId, effortId) {
+        if (!available || locked || status === "selecting" || hostPending !== null || selectionRef.current !== null) return;
+        if (props.select === undefined || props.select === null) return;
+        var selection;
+        try { selection = __core.buildSelection(providerId, modelId, effortId); }
+        catch (error) { setNotice(messageOf(error)); return; }
+        var latestModel = liveModel(providerId, modelId);
+        if (latestModel === undefined) return;
+        if (selection.reasoningEffort !== undefined) {
+          var latestEfforts = __core.effortChoices(latestModel.reasoning, t("providerDefault"));
+          if (!latestEfforts.some(function (choice) { return choice.effort === selection.reasoningEffort; })) {
+            setNotice(t("effortUnavailable"));
+            return;
+          }
+        }
+        var operation = { sessionId: sessionId, generation: draftStore.getGeneration() };
+        selectionRef.current = operation;
+        selectErrorRef.current = null;
+        setSubmitting(true);
+        setPendingSelection(selection);
+        setNotice(null);
+        var active = function () {
+          return mountedRef.current && selectionRef.current === operation
+            && operation.generation === draftStore.getGeneration();
+        };
+        var settle = function (outcome, error) {
+          if (!active()) return;
+          selectionRef.current = null;
+          setSubmitting(false);
+          setPendingSelection(null);
+          if (error !== undefined || outcome === false || (outcome !== null && outcome !== undefined && outcome.ok === false)) {
+            var failure = error !== undefined ? error : outcome === false ? t("unavailable") : outcome.error;
+            var code = failure !== null && failure !== undefined ? failure.code : undefined;
+            if (typeof code === "string") selectErrorRef.current = code + ": " + messageOf(failure);
+            var text = code === "session/writer-held" || messageOf(failure).indexOf("session/writer-held") >= 0
+              ? t("sessionInUse") : t("selectFailed") + messageOf(failure);
+            setNotice(text);
+            showToast(text);
+            return;
+          }
+          if (liveModel(providerId, modelId) === undefined) return;
+          draftStore.commit(sessionId, selection);
+          store.rememberSelection(selection);
+          closeAfterSelection();
+        };
+        try {
+          var result = props.select(selection);
+          if (result !== null && result !== undefined && typeof result.then === "function") {
+            result.then(function (value) { settle(value); }, function (error) { settle(undefined, error); });
+          } else settle(result);
+        } catch (error) { settle(undefined, error); }
+      }
+
+      /**
+       * 点模型行：有多种档位可选时先进思维强度页（预选上次的档位），确认后才提交；
+       * 没有档位或只有一种选择时不必确认：已是当前模型就只关闭，否则直接切换。
+       */
+      function chooseModel(model) {
+        if (__core.effortChoices(model.reasoning, t("providerDefault")).length > 1) {
+          if (!rowsDisabled) openEffort(model, "model");
+          return;
+        }
+        if (current !== null && current.provider === model.ref.providerId && current.model === model.ref.modelId) {
+          closeAfterSelection();
+          return;
+        }
+        commit(model.ref.providerId, model.ref.modelId, undefined);
+      }
+      function chooseEffort(model, choice) {
+        var isCurrent = current !== null && current.provider === model.ref.providerId && current.model === model.ref.modelId;
+        if (isCurrent && effectiveEffort === choice.effort) {
+          closeAfterSelection();
+          return;
+        }
+        commit(model.ref.providerId, model.ref.modelId, choice.effort);
+      }
+      function toggleFavorite(key) {
+        var latest = store.getPreferences().favorites;
+        var next = latest.filter(function (entry) { return entry !== key; });
+        if (latest.indexOf(key) === -1) next.push(key);
+        store.patch({ favorites: next });
+      }
+      function hasEfforts(model) {
+        return model !== undefined && model !== null && __core.effortChoices(model.reasoning, t("providerDefault")).length > 0;
+      }
+      function reload() {
+        if (props.load !== undefined && props.load !== null) props.load();
+      }
+
+      /* ---------------- 渲染辅助 ---------------- */
+
+      function providerFace(providerId) {
+        var provider = catalog.providerOf.get(providerId);
+        return { id: providerId, name: provider === undefined ? String(providerId) : providerLabelOf(provider, t) };
+      }
+
+      /** 与官方 renderModelLabel 同形：<span data-provider-id data-model-id>{标签槽位 | 模型名}</span>。 */
+      function renderLabel(display, placement, selected) {
+        var name = __core.modelDisplayName(display, display.ref.modelId);
+        var content = name;
+        if (labelEntry !== null) {
+          var raw = rawModels.get(display.stableKey);
+          var model = {};
+          if (raw !== undefined && raw !== null) {
+            var rawKeys = Object.keys(raw);
+            for (var rk = 0; rk < rawKeys.length; rk += 1) model[rawKeys[rk]] = raw[rawKeys[rk]];
+          }
+          model.id = display.ref.modelId;
+          // 官方契约传宿主原始 model（name 即宿主名），标签插件按它判断；宿主只给 modelName 等字段时补上显示名
+          if (typeof model.name !== "string" || model.name.length === 0) model.name = display.originalName;
+          var labelProps = {};
+          var face = labelFaceOf(labelEntry, sessionId);
+          if (face !== null) {
+            var faceKeys = Object.keys(face);
+            for (var fk = 0; fk < faceKeys.length; fk += 1) labelProps[faceKeys[fk]] = face[faceKeys[fk]];
+          }
+          labelProps.provider = providerFace(display.ref.providerId);
+          labelProps.model = model;
+          labelProps.placement = placement;
+          labelProps.selected = selected;
+          labelProps.sessionId = sessionId;
+          labelProps.t = props.labels !== null && props.labels !== undefined && typeof props.labels.bind === "function"
+            ? props.labels.bind(labelEntry.locale) : IDENTITY_T;
+          DIAG.label.renders += 1;
+          var node = h(labelEntry.component, labelProps);
+          content = LabelBoundary === null ? node
+            : h(LabelBoundary, { key: "label-" + String(label.version) + "-" + String(sessionId), fallback: name }, node);
+        }
+        return h("span", { className: "dsmn_label", "data-provider-id": display.ref.providerId, "data-model-id": display.ref.modelId }, content);
       }
 
       itemRefs.current = [];
+      modelRefs.current = [];
+      checkedAtRef.current = -1;
       var itemIndex = 0;
-      var itemRef = function () {
+      var itemRef = function (selected) {
         var at = itemIndex;
         itemIndex += 1;
+        if (selected === true && checkedAtRef.current === -1) checkedAtRef.current = at;
         return function (node) { itemRefs.current[at] = node; };
       };
-
-      var activeProvider = null;
-      for (var api = 0; api < visibleProviders.length; api += 1) {
-        if (visibleProviders[api].id === openProvider) { activeProvider = visibleProviders[api]; break; }
-      }
-      var openModelDisplay = openModel === null || openModel === undefined || catalog.modelOf === undefined || catalog.modelOf === null
-        ? undefined
-        : catalog.modelOf.get(openModel);
-      var activeChoices = openModelDisplay === undefined ? [] : __core.effortChoices(openModelDisplay.reasoning, t("providerDefault"));
-
-      function providerValue(provider) {
-        if (current === null || current.provider !== provider.id) return "";
-        var display = catalog.modelOf === undefined || catalog.modelOf === null ? undefined : catalog.modelOf.get(JSON.stringify([current.provider, current.model]));
-        return display === undefined || display === null ? String(current.model) : __core.modelDisplayName(display, current.model);
+      var visibleModels = [];
+      var currentVisibleIndex = -1;
+      // 模型页的行要先登记，才能算出高亮下标；这里先按渲染顺序收集，再统一生成元素
+      function registerModel(model) {
+        var index = visibleModels.length;
+        visibleModels.push(model);
+        if (currentVisibleIndex === -1 && current !== null && current.provider === model.ref.providerId && current.model === model.ref.modelId) currentVisibleIndex = index;
+        return index;
       }
 
-      function backRow(label, key) {
-        return h("button", {
-          key: key, ref: itemRef(), type: "button", role: "menuitem", className: "dsmn_cell dsmn_cellBack",
-          onClick: function () { setPane(pane === "effort" ? "models" : "providers"); }
-        },
-          uiNode("IconChevronLeftOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "‹")),
-          h("span", { className: "dsmn_cellLabel" }, label),
-          h("span", { className: "dsmn_cellValue" }, "")
-        );
-      }
+      var rowsDisabled = locked || busy || !catalogReady;
 
-      function optionRow(key, label, selected, onPick, depth, detail, refBuilder) {
-        return h("button", {
-          key: key, ref: (refBuilder || itemRef)(), type: "button", role: "menuitemradio", "aria-checked": selected ? "true" : "false",
-          "data-depth": depth,
-          className: "dsmn_option" + (selected ? " dsmn_selected" : ""),
-          title: label,
-          disabled: locked || submitting || status === "selecting" || !catalogReady,
-          onClick: onPick
-        },
-          h("span", { className: "dsmn_optionCopy" }, h("span", { className: "dsmn_modelName" }, label),
-            detail === undefined ? null : h("span", { className: "dsmn_modelMeta" }, detail)),
-          h("span", { className: "dsmn_check" }, selected ? uiNode("IconCheckOutlineRegular", {}) : null)
-        );
-      }
-
-      function modelOption(model, prefix, refBuilder) {
-        var key = __core.stableKeyOf(model.ref);
+      function modelRow(entry, activeIndex) {
+        var model = entry.model;
+        var key = model.stableKey;
+        var index = entry.index;
         var selected = current !== null && current.provider === model.ref.providerId && current.model === model.ref.modelId;
-        var provider = catalog.providerOf.get(model.ref.providerId);
-        var detail = (provider === undefined ? model.ref.providerId : providerLabelOf(provider, t)) + " · " + model.ref.modelId;
+        var pendingHere = pendingNow !== null && pendingNow.provider === model.ref.providerId && pendingNow.model === model.ref.modelId;
+        var name = __core.modelDisplayName(model, model.ref.modelId);
+        var provider = providerFace(model.ref.providerId);
+        // 显示名与 ID 只差大小写时不重复一行（完整 ID 仍在 title 里，也仍可搜索）
+        var idNote = name.toLowerCase() === model.ref.modelId.toLowerCase() ? "" : model.ref.modelId;
+        var detail = entry.withProvider ? provider.name + (idNote === "" ? "" : " · " + idNote) : idNote;
         var favorite = preferences.favorites.indexOf(key) !== -1;
-        return h("div", { key: prefix + key, className: "dsmn_modelRow" },
-          optionRow(prefix + key, __core.modelDisplayName(model, model.ref.modelId), selected, function () {
-            var latestModel = liveModel(model.ref.providerId, model.ref.modelId);
-            if (latestModel === undefined) return;
-            if (__core.effortChoices(latestModel.reasoning, t("providerDefault")).length === 0) {
-              commit(model.ref.providerId, model.ref.modelId, undefined);
-              return;
-            }
-            closeShortcut(false);
-            setOpenProvider(model.ref.providerId);
-            setOpenModel(key);
-            setPane("effort");
-          }, "3", detail, refBuilder),
+        var efforts = hasEfforts(model);
+        var active = index === activeIndex;
+        var registerRef = itemRef(selected);
+        return h("div", {
+          key: entry.section + "-" + key, className: "dsmn_modelRow",
+          "data-indent": entry.indent > 0 ? String(entry.indent) : undefined,
+          "data-current": selected ? "true" : undefined,
+          "data-active": active ? "true" : undefined
+        },
           h("button", {
-            type: "button", className: "dsmn_favorite", ref: (refBuilder || itemRef)(),
+            ref: function (node) { registerRef(node); modelRefs.current[index] = node; },
+            type: "button",
+            role: "menuitemradio",
+            "aria-checked": selected ? "true" : "false",
+            id: baseId + "-model-" + index,
+            tabIndex: showSearch ? -1 : 0,
+            "data-depth": "3",
+            "data-highlighted": active ? "" : undefined,
+            className: "dsmn_option dsmn_modelOption" + (selected ? " dsmn_selected" : "") + (active ? " dsmn_optionActive" : ""),
+            title: modelRowTitle(name, model.ref.modelId),
+            disabled: rowsDisabled,
+            onFocus: function () { setHighlighted(index); },
+            onMouseMove: busy || active ? undefined : function () {
+              if (showSearch) setHighlighted(index);
+              else focusNode(modelRefs.current[index]);
+            },
+            onClick: function () { chooseModel(model); }
+          },
+            h("span", { className: "dsmn_optionCopy" },
+              h("span", { className: "dsmn_modelName" }, renderLabel(model, "option", selected)),
+              detail === "" ? null : h("span", { className: "dsmn_modelMeta" }, detail)),
+            h("span", { className: "dsmn_check" }, pendingHere ? stateDot() : selected ? uiNode("IconCheckOutlineRegular", {}, "✓") : null)
+          ),
+          // 收藏与思维强度按钮不进 Tab / 方向键序列（与官方行一样只在模型之间移动），→ 键可打开思维强度
+          h("button", {
+            type: "button", className: "dsmn_pin", tabIndex: -1,
             "data-action": "favorite-model", "data-model-id": model.ref.modelId,
-            "aria-label": t(favorite ? "favoriteRemove" : "favoriteAdd") + " · " + detail,
+            "aria-label": t(favorite ? "favoriteRemove" : "favoriteAdd") + " · " + name,
             "aria-pressed": favorite ? "true" : "false",
             title: t(favorite ? "favoriteRemove" : "favoriteAdd"),
-            onClick: function () {
-              var latest = store.getPreferences().favorites;
-              var next = latest.filter(function (entry) { return entry !== key; });
-              if (latest.indexOf(key) === -1) next.push(key);
-              store.patch({ favorites: next });
-            }
-          }, favorite ? "★" : "☆")
+            onClick: function () { toggleFavorite(key); }
+          }, favorite ? "★" : "☆"),
+          efforts ? h("button", {
+            type: "button", className: "dsmn_effortOpen", tabIndex: -1,
+            "data-action": "open-effort", "data-model-id": model.ref.modelId,
+            "aria-label": t("effortOpen") + " · " + name,
+            title: t("effortOpen"),
+            disabled: rowsDisabled,
+            onClick: function () { openEffort(model, "model"); }
+          }, uiNode("IconChevronRightOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "›"))) : null
         );
       }
 
-      function modelsForKeys(keys) {
-        var found = [];
-        var seen = new Set();
-        for (var k = 0; k < keys.length; k += 1) {
-          var model = catalog.modelOf.get(keys[k]);
-          if (seen.has(keys[k])) continue;
-          seen.add(keys[k]);
-          found.push({ key: keys[k], model: model });
-        }
-        return found;
-      }
-      function shortcutOption(entry, kind) {
-        if (entry.model !== undefined) return modelOption(entry.model, kind + "-", shortcutItemRef);
+      /** 收藏 / 最近里已不在目录中的条目：置灰、不可选，但能单独移除。 */
+      function missingRow(section, key, indent) {
         var identity = null;
         try {
-          var parsed = JSON.parse(entry.key);
+          var parsed = JSON.parse(key);
           if (Array.isArray(parsed) && parsed.length === 2 && typeof parsed[0] === "string" && typeof parsed[1] === "string") identity = parsed;
         } catch (ignored) { /* Older or malformed preference keys must still be removable. */ }
-        var label = identity === null ? entry.key : identity[1];
-        var provider = identity === null ? undefined : catalog.providerOf.get(identity[0]);
-        var detail = identity === null ? "" : (provider === undefined ? identity[0] : providerLabelOf(provider, t)) + " · ";
-        return h("div", { key: kind + "-" + entry.key, className: "dsmn_modelRow dsmn_missingModel", "data-unavailable-model": entry.key },
-          h("button", { type: "button", role: "menuitemradio", "aria-checked": "false", disabled: true, className: "dsmn_option", title: label },
-            h("span", { className: "dsmn_optionCopy" }, h("span", { className: "dsmn_modelName" }, label),
-              h("span", { className: "dsmn_modelMeta" }, detail + t(catalogReady ? "modelMissing" : "loading")))),
+        var name = identity === null ? key : identity[1];
+        var providerName = identity === null ? "" : providerFace(identity[0]).name;
+        // 「不可用」抽屉的标题已说明状态，行里只留供应商；目录未就绪的条目还在原分组，要说明正在加载
+        var detail = catalogReady ? providerName : (providerName === "" ? "" : providerName + " · ") + t("loading");
+        var isFavorite = section === "favorites";
+        return h("div", { key: section + "-" + key, className: "dsmn_modelRow dsmn_missingModel", "data-unavailable-model": key, "data-indent": indent > 0 ? String(indent) : undefined },
+          h("button", { type: "button", role: "menuitemradio", "aria-checked": "false", disabled: true, tabIndex: -1, className: "dsmn_option", title: name },
+            h("span", { className: "dsmn_optionCopy" }, h("span", { className: "dsmn_modelName" }, name),
+              detail === "" ? null : h("span", { className: "dsmn_modelMeta" }, detail))),
           h("button", {
-            type: "button", className: "dsmn_favorite", ref: shortcutItemRef(),
-            "data-action": kind === "favorites" ? "favorite-model" : "remove-recent",
+            type: "button", className: "dsmn_pin dsmn_pinVisible",
+            "data-action": isFavorite ? "favorite-model" : "remove-recent",
             "data-model-id": identity === null ? undefined : identity[1],
-            "aria-label": t(kind === "favorites" ? "favoriteRemove" : "recentRemove") + " · " + label,
-            title: t(kind === "favorites" ? "favoriteRemove" : "recentRemove"),
+            "aria-label": t(isFavorite ? "favoriteRemove" : "recentRemove") + " · " + name,
+            title: t(isFavorite ? "favoriteRemove" : "recentRemove"),
             onClick: function () {
               var latest = store.getPreferences();
-              if (kind === "favorites") store.patch({ favorites: latest.favorites.filter(function (key) { return key !== entry.key; }) });
-              else if (identity !== null && latest.lastModelByProvider[identity[0]] === identity[1]) {
-                var removal = {};
-                removal[identity[0]] = null;
-                store.patch({ lastModelByProvider: removal, lastProviderId: latest.lastProviderId === identity[0] ? null : latest.lastProviderId });
+              if (isFavorite) {
+                store.patch({ favorites: latest.favorites.filter(function (entry) { return entry !== key; }) });
+                return;
               }
+              var removal = { recentModels: latest.recentModels.filter(function (entry) { return entry !== key; }) };
+              // 旧字段也同步清掉（降级回旧版时不会把刚删的条目迁回来）；只清与本条完全一致的那一项
+              if (identity !== null && latest.lastModelByProvider[identity[0]] === identity[1]) {
+                removal.lastModelByProvider = {};
+                removal.lastModelByProvider[identity[0]] = null;
+                removal.lastProviderId = latest.lastProviderId === identity[0] ? null : latest.lastProviderId;
+              }
+              store.patch(removal);
             }
-          }, kind === "favorites" ? "★" : "×")
+          }, isFavorite ? "★" : "×")
         );
-      }
-      var recentKeys = [];
-      var lastProviders = Object.keys(preferences.lastModelByProvider);
-      if (preferences.lastProviderId !== undefined && preferences.lastModelByProvider[preferences.lastProviderId] !== undefined) lastProviders.unshift(preferences.lastProviderId);
-      for (var rp = 0; rp < lastProviders.length; rp += 1) recentKeys.push(JSON.stringify([lastProviders[rp], preferences.lastModelByProvider[lastProviders[rp]]]));
-      var favoriteModels = modelsForKeys(preferences.favorites);
-      var recentModels = modelsForKeys(recentKeys);
-      function shortcutEntry(kind, title, count) {
-        return h("button", {
-          key: kind, type: "button", ref: itemRef(), role: "menuitem",
-          className: "dsmn_cell dsmn_shortcutEntry" + (kind === "favorites" ? " dsmn_favoritesEntry" : "") + (shortcutKind === kind ? " dsmn_shortcutOpen" : ""),
-          "data-action": "open-shortcuts", "data-kind": kind,
-          "aria-haspopup": "menu", "aria-expanded": shortcutKind === kind ? "true" : "false",
-          "aria-controls": "dsmn-" + sessionId + "-" + kind,
-          onMouseEnter: function (event) { openShortcut(kind, event, false); },
-          onMouseLeave: scheduleShortcutClose,
-          onClick: function (event) { openShortcut(kind, event, false); },
-          onKeyDown: function (event) {
-            if (event.key !== "ArrowRight") return;
-            event.preventDefault();
-            event.stopPropagation();
-            openShortcut(kind, event, true);
-          }
-        },
-          h("span", { className: "dsmn_shortcutIcon", "aria-hidden": "true" }, kind === "favorites" ? "★" : "◷"),
-          h("span", { className: "dsmn_cellLabel" }, title),
-          h("span", { className: "dsmn_shortcutCount" }, String(count)),
-          uiNode("IconChevronRightOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "›"))
-        );
-      }
-      if (pane === "providers") {
-        shortcutRows.push(shortcutEntry("favorites", t("favorites"), preferences.favorites.length));
-        shortcutRows.push(shortcutEntry("recent", t("recent"), recentModels.length));
-        if (trimmed.length === 0 && current !== null) {
-          var currentDisplay = lookupDisplay(current.provider, current.model);
-          if (currentDisplay !== undefined) rows.push(h("div", { key: "current", "data-section": "current" },
-            h("div", { className: "dsmn_shortcutTitle" }, t("currentSelection")), modelOption(currentDisplay, "current-")));
-        }
-      }
-      if (shortcutKind !== null && pane === "providers") {
-        shortcutModels = shortcutKind === "favorites" ? favoriteModels : recentModels;
       }
 
-        if (preferences.showSearch && pane !== "effort") {
-          rows.push(h("div", { key: "search", className: "dsmn_searchRow" },
+      /**
+       * 分区（收藏、最近、搜索结果）的标题由本插件渲染，不用官方 MenuGroup：
+       * 它的吸顶标题在半透明菜单上会和滚过的行重叠，样式也无法并入树形层级。
+       */
+      function menuGroup(key, title, children, extra) {
+        var attrs = { key: key, className: "dsmn_section" };
+        if (extra !== undefined) {
+          var extraKeys = Object.keys(extra);
+          for (var ek = 0; ek < extraKeys.length; ek += 1) attrs[extraKeys[ek]] = extra[extraKeys[ek]];
+        }
+        return h("div", attrs,
+          h("div", { className: "dsmn_menuGroup", role: "group", "aria-label": title },
+            h("div", { className: "dsmn_menuGroupLabel", "aria-hidden": "true" }, title),
+            children));
+      }
+
+      /* ---------------- 模型页的条目规划（先登记顺序，再生成元素） ---------------- */
+
+      var plan = [];
+      if (pane === "model") {
+        if (hits !== null) {
+          var hitGroups = [];
+          var hitGroupOf = new Map();
+          for (var hi = 0; hi < hits.length; hi += 1) {
+            var hitModel = catalog.modelOf.get(JSON.stringify([hits[hi].ref.providerId, hits[hi].ref.modelId]));
+            if (hitModel === undefined) continue;
+            var bucket = hitGroupOf.get(hitModel.ref.providerId);
+            if (bucket === undefined) {
+              bucket = { providerId: hitModel.ref.providerId, entries: [] };
+              hitGroupOf.set(hitModel.ref.providerId, bucket);
+              hitGroups.push(bucket);
+            }
+            bucket.entries.push({ section: "hit", model: hitModel, withProvider: false, index: registerModel(hitModel) });
+          }
+          for (var hg = 0; hg < hitGroups.length; hg += 1) {
+            plan.push({ kind: "group", key: "hit-" + hitGroups[hg].providerId, title: providerFace(hitGroups[hg].providerId).name,
+              extra: { "data-section": "search", "data-provider-id": hitGroups[hg].providerId }, entries: hitGroups[hg].entries });
+          }
+        } else {
+          var favoriteEntries = [];
+          var favoriteSeen = new Set();
+          // 目录就绪后仍找不到的收藏/最近条目集中到底部默认折叠的「不可用」分组；加载中保持原位（显示「加载中」）
+          var unavailableEntries = [];
+          for (var fv = 0; fv < preferences.favorites.length; fv += 1) {
+            var favoriteKey = preferences.favorites[fv];
+            if (favoriteSeen.has(favoriteKey)) continue;
+            favoriteSeen.add(favoriteKey);
+            var favoriteModel = catalog.modelOf.get(favoriteKey);
+            if (favoriteModel === undefined) (catalogReady ? unavailableEntries : favoriteEntries).push({ section: "favorites", missing: favoriteKey });
+            else favoriteEntries.push({ section: "favorites", model: favoriteModel, withProvider: true, index: registerModel(favoriteModel) });
+          }
+          if (favoriteEntries.length > 0) plan.push({ kind: "group", key: "favorites", title: t("favorites"), extra: { "data-section": "favorites" }, entries: favoriteEntries });
+
+          var recentEntries = [];
+          for (var rc = 0; rc < preferences.recentModels.length && recentEntries.length < RECENT_VISIBLE; rc += 1) {
+            var recentKey = preferences.recentModels[rc];
+            if (favoriteSeen.has(recentKey)) continue;
+            favoriteSeen.add(recentKey);
+            var recentModel = catalog.modelOf.get(recentKey);
+            if (recentModel === undefined && catalogReady) {
+              // 失效记录不占「最近使用」的 5 个名额
+              unavailableEntries.push({ section: "recent", missing: recentKey });
+              continue;
+            }
+            recentEntries.push(recentModel === undefined
+              ? { section: "recent", missing: recentKey }
+              : { section: "recent", model: recentModel, withProvider: true, index: registerModel(recentModel) });
+          }
+          if (recentEntries.length > 0) plan.push({ kind: "group", key: "recent", title: t("recent"), extra: { "data-section": "recent" }, entries: recentEntries });
+
+          var collapseMap = preferences.collapsedFamilies === undefined || preferences.collapsedFamilies === null ? {} : preferences.collapsedFamilies;
+          var providerCollapseMap = preferences.collapsedProviders === undefined || preferences.collapsedProviders === null ? {} : preferences.collapsedProviders;
+          // 只有一个供应商时没有可折叠的意义，直接展开
+          var flatProviders = visibleProviders.length <= 1;
+          for (var vp = 0; vp < visibleProviders.length; vp += 1) {
+            var provider = visibleProviders[vp];
+            if (provider.models.length === 0) continue;
+            // 供应商折叠：默认只展开当前选择所在的供应商，其余只显示名称与模型数；显式状态写进偏好 collapsedProviders
+            var providerHoldsCurrent = current !== null && current.provider === provider.id;
+            var providerIsCollapsed = !flatProviders
+              && __core.providerCollapsed(providerCollapseMap, provider.id, providerHoldsCurrent);
+            var providerGroup = { kind: "group", key: "provider-" + provider.id, title: providerLabelOf(provider, t),
+              extra: { "data-section": "provider", "data-provider-id": provider.id }, entries: [],
+              toggle: flatProviders ? null : { providerId: provider.id, collapsed: providerIsCollapsed, count: provider.models.length, current: providerHoldsCurrent } };
+            plan.push(providerGroup);
+            // 折叠的供应商不构造家族与模型行
+            if (providerIsCollapsed) continue;
+            var providerEntries = providerGroup.entries;
+            var buckets = [];
+            // Host-order mode is deliberately flat: regrouping interleaved families
+            // would either reorder models or hide them behind another family's toggle.
+            if (preferences.grouping === "off") buckets = [{ key: "host-order", label: "", models: provider.models }];
+            else {
+              var familyList = __core.familyRows(provider.models, { mode: preferences.grouping });
+              for (var fl = 0; fl < familyList.length; fl += 1) {
+                var familyRow = familyList[fl];
+                if (familyRow.kind === "family") buckets.push({ key: familyRow.familyId, label: familyLabelOf(familyRow, t), models: [] });
+                else buckets[buckets.length - 1].models.push(familyRow.model);
+              }
+            }
+            var flatFamilies = buckets.length <= 1;
+            // 树的深度：行前面实际有几级可折叠的标题，决定缩进和缩进线的条数
+            var familyIndent = flatProviders ? 0 : 1;
+            var modelIndent = familyIndent + (flatFamilies ? 0 : 1);
+            // 家族折叠：默认折叠，只默认展开当前选择所在的那一族；显式状态写进偏好 collapsedFamilies
+            var currentFamilyKey = null;
+            if (current !== null && current.provider === provider.id) {
+              for (var cf = 0; cf < buckets.length; cf += 1) {
+                for (var cm = 0; cm < buckets[cf].models.length; cm += 1) {
+                  if (buckets[cf].models[cm].ref.modelId === current.model) currentFamilyKey = __core.familyCollapseKey(provider.id, buckets[cf].key);
+                }
+              }
+            }
+            if (providerGroup.toggle !== null && !flatFamilies) providerGroup.toggle.currentFamilyKey = currentFamilyKey;
+            for (var bk = 0; bk < buckets.length; bk += 1) {
+              var familyBucket = buckets[bk];
+              var collapseKey = __core.familyCollapseKey(provider.id, familyBucket.key);
+              var isCollapsed = !flatFamilies && __core.familyCollapsed(collapseMap, collapseKey, collapseKey === currentFamilyKey);
+              if (!flatFamilies) providerEntries.push({ section: "family", collapseKey: collapseKey, collapsed: isCollapsed, label: familyBucket.label, count: familyBucket.models.length, indent: familyIndent, current: collapseKey === currentFamilyKey });
+              // 折叠的家族不构造模型行（大目录下每次重渲染都会省掉成百上千个元素）
+              if (!isCollapsed) {
+                for (var bm = 0; bm < familyBucket.models.length; bm += 1) {
+                  providerEntries.push({ section: "p-" + provider.id, model: familyBucket.models[bm], withProvider: false, indent: modelIndent, index: registerModel(familyBucket.models[bm]) });
+                }
+              }
+            }
+          }
+
+          for (var fi = 0; fi < failures.length; fi += 1) unavailableEntries.push({ section: "failure", failure: failures[fi], at: fi });
+          if (unavailableEntries.length > 0) {
+            var hideUnavailable = preferences.showUnavailable !== true;
+            plan.push({ kind: "group", key: "unavailable", title: t("unavailableGroup"), extra: { "data-section": "unavailable" },
+              entries: hideUnavailable ? [] : unavailableEntries,
+              toggle: { kind: "unavailable", collapsed: hideUnavailable, count: unavailableEntries.length, hasFailure: failures.length > 0 } });
+          }
+        }
+      }
+      // 官方 activeModelIndex：未手动高亮时落在当前模型上，越界时夹到末尾
+      var activeIndex = visibleModels.length === 0 ? -1
+        : Math.min(highlighted === null ? Math.max(0, currentVisibleIndex) : highlighted, visibleModels.length - 1);
+
+      /** 折叠箭头始终是同一个节点，展开时由样式旋转，折叠动作才有过渡。 */
+      function foldChevron() {
+        return uiNode("IconChevronRightOutlineRegular", { className: "dsmn_groupChevron" }, h("span", { className: "dsmn_groupChevron" }, "›"));
+      }
+
+      /** 当前模型被折叠起来时，蓝点标出它在哪一组里；展开后由模型行自己的蓝色竖条表达。 */
+      function currentMark(holdsCurrent, collapsed) {
+        return holdsCurrent && collapsed ? h("span", { className: "dsmn_currentMark", "aria-hidden": "true" }) : null;
+      }
+
+      /** 可折叠的供应商分组：标题本身就是折叠按钮。 */
+      function providerGroupNode(group, children) {
+        var toggle = group.toggle;
+        var attrs = { key: group.key, className: "dsmn_section" };
+        var extraKeys = Object.keys(group.extra);
+        for (var ek = 0; ek < extraKeys.length; ek += 1) attrs[extraKeys[ek]] = group.extra[extraKeys[ek]];
+        attrs["data-collapsed"] = toggle.collapsed ? "true" : "false";
+        var isUnavailable = toggle.kind === "unavailable";
+        return h("div", attrs,
+          h("div", { className: "dsmn_menuGroup", role: "group", "aria-label": group.title },
+            h("button", {
+              type: "button",
+              tabIndex: -1,
+              className: "dsmn_menuGroupLabel dsmn_providerToggle",
+              "data-depth": "1",
+              "data-provider-id": isUnavailable ? undefined : toggle.providerId,
+              "data-action": isUnavailable ? "toggle-unavailable" : undefined,
+              "data-has-failure": toggle.hasFailure === true ? "true" : undefined,
+              "aria-current": toggle.current === true ? "true" : undefined,
+              "aria-expanded": toggle.collapsed ? "false" : "true",
+              title: group.title,
+              onClick: function () {
+                if (isUnavailable) {
+                  store.patch({ showUnavailable: toggle.collapsed });
+                  return;
+                }
+                var patch = {};
+                patch[toggle.providerId] = !toggle.collapsed;
+                store.patch({
+                  collapsedProviders: patch,
+                  // 收起时连带收回家族，重新展开只看到家族标题
+                  collapsedFamilies: toggle.collapsed ? undefined
+                    : __core.foldProviderFamilies(store.getPreferences().collapsedFamilies, toggle.providerId, toggle.currentFamilyKey)
+                });
+              }
+            },
+              foldChevron(),
+              h("span", { className: "dsmn_groupLabelText" }, group.title),
+              currentMark(toggle.current === true, toggle.collapsed),
+              h("span", { className: "dsmn_groupCount" }, String(toggle.count))
+            ),
+            children));
+      }
+
+      function familyToggle(entry) {
+        return h("button", {
+          key: "g-" + entry.collapseKey,
+          type: "button",
+          tabIndex: -1,
+          className: "dsmn_groupToggle",
+          "data-depth": "2",
+          "data-indent": entry.indent > 0 ? String(entry.indent) : undefined,
+          "aria-current": entry.current ? "true" : undefined,
+          "aria-expanded": entry.collapsed ? "false" : "true",
+          onClick: function () {
+            var latest = store.getPreferences().collapsedFamilies;
+            var next = {};
+            var keys = latest === undefined || latest === null ? [] : Object.keys(latest);
+            for (var ki = 0; ki < keys.length; ki += 1) next[keys[ki]] = latest[keys[ki]];
+            next[entry.collapseKey] = !entry.collapsed;
+            store.patch({ collapsedFamilies: next });
+          }
+        },
+          foldChevron(),
+          h("span", { className: "dsmn_groupLabelText" }, entry.label),
+          currentMark(entry.current, entry.collapsed),
+          h("span", { className: "dsmn_groupCount" }, String(entry.count))
+        );
+      }
+
+      /* ---------------- 各页内容 ---------------- */
+
+      var body = [];
+      var effortValue = currentEffortLabel === null ? "" : currentEffortLabel;
+      if (pane === "root") {
+        body.push(h("button", {
+          key: "cell-model", ref: itemRef(false), type: "button", role: "menuitem", className: "dsmn_cell", "data-cell": "model",
+          onClick: function () { drill("model"); }
+        },
+          h("span", { className: "dsmn_cellLabel" }, t("menuModel")),
+          h("span", { className: "dsmn_cellValue" }, currentChoice === undefined ? triggerLabel : renderLabel(currentChoice, "menu", true)),
+          uiNode("IconChevronRightOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "›"))
+        ));
+        if (currentChoice !== undefined && currentChoices.length > 0) {
+          body.push(h("button", {
+            key: "cell-effort", ref: itemRef(false), type: "button", role: "menuitem", className: "dsmn_cell", "data-cell": "effort",
+            onClick: function () { openEffort(currentChoice, "root"); }
+          },
+            h("span", { className: "dsmn_cellLabel" }, t("effortsTitle")),
+            h("span", { className: "dsmn_cellValue" }, effortValue),
+            uiNode("IconChevronRightOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "›"))
+          ));
+        }
+      } else if (pane === "model") {
+        if (showSearch) {
+          body.push(h("div", { key: "search", className: "dsmn_searchRow" },
             h("input", {
-              className: "dsmn_search" + (trimmed.length > 0 ? " dsmn_searchWithQuery" : ""),
+              ref: searchRef,
+              className: "dsmn_search" + (query !== "" ? " dsmn_searchWithQuery" : ""),
               type: "text",
               role: "searchbox",
               value: query,
               placeholder: t("searchPlaceholder"),
               "aria-label": t("searchPlaceholder"),
-              onChange: function (event) { setQuery(event.target.value); },
-              onKeyDown: function (event) {
-                if (event.key === "Escape" && query.length > 0) {
-                  event.stopPropagation();
-                  setQuery("");
-                }
-              }
+              "aria-controls": baseId + "-models",
+              "aria-activedescendant": activeIndex < 0 ? undefined : baseId + "-model-" + activeIndex,
+              readOnly: busy,
+              onChange: function (event) { changeQuery(event.target.value); }
             }),
-            trimmed.length > 0
-              ? h("button", { key: "clear", type: "button", className: "dsmn_searchClear", "aria-label": t("back"), onClick: function () { setQuery(""); } }, uiNode("IconCloseFillRegular", {}, "✕"))
+            query !== ""
+              ? h("button", { key: "clear", type: "button", className: "dsmn_searchClear", "aria-label": t("searchClear"), title: t("searchClear"), disabled: busy,
+                  onClick: function () { changeQuery(""); focusNode(searchRef.current); } }, uiNode("IconCloseFillRegular", {}, "✕"))
               : null
           ));
         }
-
-      if (pane === "providers") {
-        for (var pi = 0; pi < shownProviders.length; pi += 1) {
-          (function (provider) {
-            var label = providerLabelOf(provider, t);
-            rows.push(h("button", {
-              key: "p-" + provider.id, ref: itemRef(), type: "button", role: "menuitem", className: "dsmn_cell", "data-depth": "1",
-              title: label,
-              onMouseEnter: function () { closeShortcut(false); },
-              onClick: function () {
-                closeShortcut(false);
-                setOpenProvider(provider.id);
-                setOpenModel(null);
-                setQuery("");
-                setPane("models");
-              }
-            },
-              h("span", { className: "dsmn_cellLabel" }, label),
-              h("span", { className: "dsmn_cellValue" }, providerValue(provider)),
-              uiNode("IconChevronRightOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "›"))
-            ));
-          })(shownProviders[pi]);
+        function failureRow(failure, index) {
+          var failedName = failure === null || failure === undefined ? "" : failure.id === "deepseek-account" ? t("providerAccount")
+            : typeof failure.name === "string" && failure.name.length > 0 ? failure.name : String(failure.id);
+          return h("div", { key: "failure-" + (failure === null || failure === undefined ? index : failure.id), className: "dsmn_warning", role: "status",
+            "data-failed-provider": failure === null || failure === undefined ? undefined : failure.id },
+            h("span", {}, failedName + t("groupLoadFailed") + messageOf(failure === null || failure === undefined ? undefined : failure.message)),
+            h("button", { type: "button", "data-action": "retry-provider", className: "dsmn_retry", disabled: busy, onClick: reload }, t("retry")));
         }
-        if (shownProviders.length === 0 && trimmed.length === 0) rows.push(h("div", { key: "empty-providers", className: "dsmn_empty" },
-          t(catalogReady ? "emptyCatalog" : "loading"),
-          catalogReady && current === null ? h("button", { type: "button", "data-action": "refresh-catalog", className: "dsmn_retry",
-            onClick: function () { if (props.load !== undefined) props.load(); } }, t("refresh")) : null));
-      }
-      if (pane === "models") rows.push(backRow(activeProvider === null ? t("stepProvider") : providerLabelOf(activeProvider, t), "back"));
-      if (pane !== "effort") {
-
-
-        if (hits !== null) {
-          if (hits.length === 0) rows.push(h("div", { key: "no-hit", className: "dsmn_empty" }, t("searchEmpty")));
-          for (var hi = 0; hi < hits.length; hi += 1) {
-            rows.push(modelOption(hits[hi], "hit-"));
-          }
-        } else if (pane === "models" && activeProvider !== null) {
-          if (activeProvider.models.length === 0) rows.push(h("div", { key: "empty-models", className: "dsmn_empty" }, t("emptyCatalog")));
-          var familyList = __core.familyRows(activeProvider.models, { mode: preferences.grouping });
-          var buckets = [];
-          for (var fi = 0; fi < familyList.length; fi += 1) {
-            var row = familyList[fi];
-            if (row.kind === "family") {
-              buckets.push({ key: row.familyId, label: familyLabelOf(row, t), models: [] });
-            } else {
-              buckets[buckets.length - 1].models.push(row.model);
-            }
-          }
-          // Host-order mode is deliberately flat: regrouping interleaved families
-          // would either reorder models or hide them behind another family's toggle.
-          if (preferences.grouping === "off") buckets = [{ key: "host-order", label: "", models: activeProvider.models }];
-          var flatFamilies = buckets.length <= 1;
-          // 家族折叠（计划 §4.5）：官方 MenuGroup 的标签不可点，这里用等价样式的按钮实现，
-          // 折叠状态写进偏好 collapsedFamilies（逐键合并、跨会话保留）。
-          var collapseMap = preferences.collapsedFamilies === undefined || preferences.collapsedFamilies === null
-            ? {}
-            : preferences.collapsedFamilies;
-          // 默认折叠，只默认展开「当前选择所在的那一族」：一点开供应商就铺满模型行太吵。
-          var currentFamilyKey = null;
-          if (current !== null && current !== undefined && current.provider === activeProvider.id) {
-            for (var cf = 0; cf < buckets.length; cf += 1) {
-              for (var cm = 0; cm < buckets[cf].models.length; cm += 1) {
-                if (buckets[cf].models[cm].ref.modelId === current.model) {
-                  currentFamilyKey = __core.familyCollapseKey(activeProvider.id, buckets[cf].key);
-                }
-              }
-            }
-          }
-          for (var bi = 0; bi < buckets.length; bi += 1) {
-            (function (bucket) {
-              var collapseKey = __core.familyCollapseKey(activeProvider.id, bucket.key);
-              var isCollapsed = !flatFamilies && __core.familyCollapsed(collapseMap, collapseKey, collapseKey === currentFamilyKey);
-              var options = [];
-              for (var mi = 0; mi < bucket.models.length; mi += 1) {
-                options.push(modelOption(bucket.models[mi], "m-"));
-              }
-              if (flatFamilies) {
-                for (var oi = 0; oi < options.length; oi += 1) rows.push(options[oi]);
-              } else {
-                rows.push(h("button", {
-                  key: "g-" + bucket.key,
-                  type: "button",
-                  className: "dsmn_groupLabel dsmn_groupToggle",
-                  "data-depth": "2",
-                  "aria-expanded": isCollapsed ? "false" : "true",
-                  onClick: function () {
-                    var next = {};
-                    var keys = Object.keys(collapseMap);
-                    for (var ki = 0; ki < keys.length; ki += 1) next[keys[ki]] = collapseMap[keys[ki]];
-                    next[collapseKey] = !isCollapsed;
-                    store.patch({ collapsedFamilies: next });
-                  }
-                },
-                  uiNode(isCollapsed ? "IconChevronRightOutlineRegular" : "IconChevronDownOutlineRegular", { className: "dsmn_groupChevron" }, h("span", { className: "dsmn_groupChevron" }, isCollapsed ? "›" : "⌄")),
-                  h("span", { className: "dsmn_groupLabelText" }, bucket.label),
-                  h("span", { className: "dsmn_groupCount" }, String(bucket.models.length))
-                ));
-                if (!isCollapsed) {
-                  for (var oj = 0; oj < options.length; oj += 1) rows.push(options[oj]);
-                }
-              }
-            })(buckets[bi]);
-          }
+        var groupNodes = plan.map(function (group) {
+          var children = group.entries.map(function (entry) {
+            if (entry.section === "family") return familyToggle(entry);
+            if (entry.section === "failure") return failureRow(entry.failure, entry.at);
+            if (entry.missing !== undefined) return missingRow(entry.section, entry.missing, group.key === "unavailable" ? 1 : 0);
+            return modelRow(entry, activeIndex);
+          });
+          return group.toggle !== undefined && group.toggle !== null ? providerGroupNode(group, children) : menuGroup(group.key, group.title, children, group.extra);
+        });
+        body.push(h("div", {
+          key: "groups", ref: groupsRef, id: baseId + "-models", className: "dsmn_groups scrollable", role: "menu",
+          "aria-label": t("menuModel"), hidden: groupNodes.length === 0 ? true : undefined
+        }, groupNodes));
+        // 「不可用」分组不算可选内容：只剩它时照常显示空目录与刷新
+        var modelGroupCount = plan.filter(function (group) { return group.key !== "unavailable"; }).length;
+        if (modelGroupCount === 0 || (hits !== null && hits.length === 0)) {
+          var emptyKey = !catalogReady ? "loading" : hits !== null ? "searchEmpty" : "emptyCatalog";
+          body.push(h("div", { key: "empty", className: "dsmn_empty", role: "status" },
+            t(emptyKey),
+            catalogReady && hits === null ? h("button", { type: "button", "data-action": "refresh-catalog", className: "dsmn_retry", onClick: reload }, t("refresh")) : null));
         }
       } else {
-        rows.push(backRow(openModelDisplay === undefined ? t("effortsTitle") : __core.modelDisplayName(openModelDisplay, openModelDisplay.ref.modelId), "back-effort"));
-        var effortActive = openModelDisplay !== undefined && current !== null && current.provider === openModelDisplay.ref.providerId && current.model === openModelDisplay.ref.modelId
-          ? resolved.effortId : openModelDisplay === undefined || openModelDisplay.reasoning === undefined ? undefined : openModelDisplay.reasoning.defaultEffort;
-        if (openModel === null || activeChoices.length === 0) {
-          rows.push(h("div", { key: "no-efforts", className: "dsmn_empty" }, t(catalogReady ? "noEfforts" : "loading")));
+        var effortName = effortModel === undefined ? t("effortsTitle") : __core.modelDisplayName(effortModel, effortModel.ref.modelId);
+        body.push(h("button", {
+          key: "back-effort", ref: itemRef(false), type: "button", role: "menuitem", className: "dsmn_cell dsmn_cellBack",
+          "aria-label": t("back") + " · " + effortName,
+          onClick: back
+        },
+          uiNode("IconChevronLeftOutlineRegular", { className: "dsmn_cellChevron" }, h("span", { className: "dsmn_cellChevron" }, "‹")),
+          h("span", { className: "dsmn_cellLabel" }, effortName),
+          h("span", { className: "dsmn_cellValue" }, t("effortsTitle"))
+        ));
+        var effortIsCurrent = effortModel !== undefined && current !== null && current.provider === effortModel.ref.providerId && current.model === effortModel.ref.modelId;
+        var effortChecked = effortIsCurrent ? effectiveEffort
+          : effortModel === undefined ? undefined : __core.preferredEffort(effortModel.reasoning, preferences.effortByModel[effortTarget]);
+        if (effortList.length === 0) {
+          body.push(h("div", { key: "no-efforts", className: "dsmn_empty" }, t(catalogReady ? "noEfforts" : "loading")));
         } else {
-          for (var ei = 0; ei < activeChoices.length; ei += 1) {
-            (function (choice) {
-              rows.push(optionRow("e-" + choice.key, choice.label, effortActive === choice.effort, function () {
-                var target = openModelDisplay.ref;
-                commit(target.providerId, target.modelId, choice.effort);
-              }, "4"));
-            })(activeChoices[ei]);
-          }
+          effortList.forEach(function (choice) {
+            var selected = effortChecked === choice.effort;
+            var pendingHere = pendingNow !== null && pendingNow.provider === effortModel.ref.providerId && pendingNow.model === effortModel.ref.modelId
+              && pendingNow.reasoningEffort === choice.effort;
+            body.push(h("button", {
+              key: "e-" + choice.key, ref: itemRef(selected), type: "button", role: "menuitemradio", "aria-checked": selected ? "true" : "false",
+              "data-depth": "4",
+              className: "dsmn_option" + (selected ? " dsmn_selected" : ""),
+              title: choice.label,
+              disabled: rowsDisabled,
+              onClick: function () { chooseEffort(effortModel, choice); }
+            },
+              h("span", { className: "dsmn_optionCopy" }, h("span", { className: "dsmn_modelName" }, choice.label)),
+              h("span", { className: "dsmn_check" }, pendingHere ? stateDot() : selected ? uiNode("IconCheckOutlineRegular", {}, "✓") : null)
+            ));
+          });
         }
       }
 
-      function onMenuKeyDown(event) {
-        if (event.key === "Escape" && shortcutKind !== null) {
-          event.stopPropagation();
-          closeShortcut(true);
-          return;
-        }
-        if (event.key === "Escape") {
-          // Escape 层级：清空搜索（输入框自己的 onKeyDown）→ 面板返回上级 → 关闭整层。
-          // providers 层没有更深的层级可返回，这里负责真正的关闭；其余层 stopPropagation
-          // 已经把事件拦在菜单内部（document 捕获监听见 661 行注释，不会抢先关闭）。
-          if (pane !== "providers") {
-            event.stopPropagation();
-            setPane(pane === "effort" ? "models" : "providers");
-            return;
-          }
-          setOpen(false);
-          return;
-        }
-        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      /* ---------------- 键盘（对照官方 onRootKeyDown） ---------------- */
+
+      function liveItems() {
         var list = [];
         for (var li = 0; li < itemRefs.current.length; li += 1) {
-          if (itemRefs.current[li] !== null && itemRefs.current[li] !== undefined) list.push(itemRefs.current[li]);
+          var node = itemRefs.current[li];
+          if (node !== null && node !== undefined && node.disabled !== true) list.push(node);
         }
-        if (list.length === 0) return;
-        var at = list.indexOf(event.target);
-        var next = event.key === "ArrowDown" ? (at + 1) % list.length : (at <= 0 ? list.length - 1 : at - 1);
-        if (typeof list[next].focus === "function") list[next].focus();
-        event.preventDefault();
+        return list;
       }
 
+      function onRootKeyDown(event) {
+        if (event === null || event === undefined) return;
+        var nativeEvent = event.nativeEvent;
+        if (event.isComposing === true || (nativeEvent !== null && nativeEvent !== undefined && nativeEvent.isComposing === true)) return;
+        if (!open) return;
+        var key = event.key;
+        var target = event.target;
+        var search = searchRef.current;
+        var inSearch = search !== null && search !== undefined && target === search;
+        if (key === "Escape") {
+          // Esc 层级：清空搜索 → 返回上一层 → 关闭并把焦点还给触发器
+          stopEvent(event);
+          if (pane === "model" && query !== "") changeQuery("");
+          else if (canBack()) back();
+          else close(true);
+          return;
+        }
+        if (pane === "model" && showSearch && (key === "ArrowDown" || key === "ArrowUp")) {
+          if (typeof event.preventDefault === "function") event.preventDefault();
+          if (!busy && visibleModels.length > 0) {
+            setHighlighted((activeIndex + (key === "ArrowDown" ? 1 : -1) + visibleModels.length) % visibleModels.length);
+            focusNode(search);
+          }
+          return;
+        }
+        if (pane === "model" && showSearch && inSearch && (key === "Enter" || (key === "Tab" && !event.shiftKey))) {
+          if (key === "Tab" && visibleModels.length === 0) return;
+          if (typeof event.preventDefault === "function") event.preventDefault();
+          var highlightedModel = visibleModels[activeIndex];
+          if (!busy && highlightedModel !== undefined) chooseModel(highlightedModel);
+          return;
+        }
+        if (key === "ArrowRight") {
+          if (inSearch && !caretAtEnd(target)) return;
+          if (pane === "model") {
+            var at = modelRefs.current.indexOf(target);
+            var model = inSearch ? visibleModels[activeIndex] : at >= 0 ? visibleModels[at] : undefined;
+            if (model !== undefined && hasEfforts(model) && !rowsDisabled) {
+              if (typeof event.preventDefault === "function") event.preventDefault();
+              openEffort(model, "model");
+            }
+            return;
+          }
+          if (pane === "root" && liveItems().indexOf(target) >= 0 && typeof target.click === "function") {
+            if (typeof event.preventDefault === "function") event.preventDefault();
+            target.click();
+          }
+          return;
+        }
+        if (key === "ArrowLeft") {
+          if (inSearch && query !== "") return;
+          if (pane !== "root" && canBack()) {
+            if (typeof event.preventDefault === "function") event.preventDefault();
+            back();
+          }
+          return;
+        }
+        if (key === "Tab") {
+          if (event.shiftKey) {
+            if (typeof event.preventDefault === "function") event.preventDefault();
+            if (canBack()) back();
+            else close(true);
+            return;
+          }
+          var rows = liveItems();
+          if (rows.indexOf(target) >= 0 && typeof target.click === "function") {
+            if (typeof event.preventDefault === "function") event.preventDefault();
+            target.click();
+            return;
+          }
+          if (target !== triggerRef.current) return;
+          if (typeof event.preventDefault === "function") event.preventDefault();
+          if (pane === "model" && showSearch) {
+            setHighlighted(null);
+            focusNode(search);
+            return;
+          }
+          var checked = checkedAtRef.current >= 0 ? itemRefs.current[checkedAtRef.current] : null;
+          focusNode(checked !== null && checked !== undefined && checked.disabled !== true ? checked : rows[0]);
+          return;
+        }
+        if (key === "ArrowDown" || key === "ArrowUp") {
+          if (typeof event.preventDefault === "function") event.preventDefault();
+          var list = liveItems();
+          if (list.length === 0) return;
+          var from = list.indexOf(target);
+          var step = key === "ArrowDown" ? 1 : -1;
+          focusNode(list[from === -1 ? (step > 0 ? 0 : list.length - 1) : (from + step + list.length) % list.length]);
+        }
+      }
+
+      /* ---------------- 触发器与浮层 ---------------- */
+
+      var triggerAria = hostCurrent === null
+        ? triggerLabel
+        : t("triggerAria") + "：" + triggerLabel + (currentEffortLabel === null ? "" : "，" + currentEffortLabel);
       var triggerNode = h(
         "button",
         {
           type: "button",
+          ref: triggerRef,
           className: "dsmn_trigger",
           title: triggerLabel,
-          "aria-label": t("triggerAria"),
+          "aria-label": triggerAria,
           "aria-haspopup": "menu",
           "aria-expanded": open ? "true" : "false",
-          disabled: locked || !available || submitting || status === "selecting",
+          "aria-controls": open ? menuId : undefined,
+          "aria-busy": busy ? "true" : undefined,
+          "data-selection-focus": selectionFocus ? "" : undefined,
+          disabled: locked || !available,
+          onBlur: function () { setSelectionFocus(false); },
           onClick: function () {
-            if (!open) {
-              setPane("providers");
-              setQuery("");
-            }
-            setOpen(!open);
+            if (open) close(true);
+            else show();
           }
         },
         uiNode("IconDataOutlineRegular", { className: "dsmn_triggerIcon", size: 16 }),
-        h("span", { className: "dsmn_triggerLabel" }, shorten(triggerLabel === undefined || triggerLabel === null ? "" : triggerLabel, 24)),
+        h("span", { className: "dsmn_triggerLabel" }, currentChoice === undefined ? triggerLabel : renderLabel(currentChoice, "trigger", true)),
         currentEffortLabel !== null ? h("span", { className: "dsmn_triggerEffort" }, currentEffortLabel) : null,
-        uiNode("IconChevronDownOutlineRegular", { className: "dsmn_chevron" + (open ? " dsmn_chevronOpen" : "") }, h("span", { className: "dsmn_chevron" }, open ? "▴" : "▾"))
+        busy
+          ? stateDot()
+          : uiNode("IconChevronDownOutlineRegular", { className: "dsmn_chevron" + (open ? " dsmn_chevronOpen" : "") }, h("span", { className: "dsmn_chevron" }, open ? "▴" : "▾"))
       );
 
-      var menuNode = !open
+      var menuNode = !open || !available
         ? null
         : h(
             uiComponent("MenuSurface") === null ? "div" : uiComponent("MenuSurface"),
             {
-              className: "dsmn_menu scrollable",
-              onMouseLeave: scheduleShortcutClose,
               ref: popoverRef,
-              role: "menu",
-              "aria-label": t("stepProvider"),
-              style: position === null ? { left: 8, top: 8, visibility: "hidden" } : position
+              id: menuId,
+              className: "dsmn_menu",
+              "data-pane": pane,
+              role: pane === "model" ? "group" : "menu",
+              "aria-label": t("menuAria"),
+              "aria-busy": status === "loading" || busy ? "true" : undefined,
+              style: position === null ? MEASURE_STYLE : position
             },
-            notice !== null ? h("div", { key: "notice", className: "dsmn_error" }, notice) : null,
-            !available ? h("div", { key: "unavailable", className: "dsmn_status" }, t("unavailable")) : null,
+            notice !== null ? h("div", { key: "notice", className: "dsmn_error", role: "alert" }, notice) : null,
             currentAddressable || !catalogReady ? null : h("div", { key: "outside", className: "dsmn_status", role: "status" },
-              h("span", {}, t("currentOutside") + shorten(triggerLabel === undefined || triggerLabel === null ? "" : triggerLabel, 40)),
-              h("button", { type: "button", "data-action": "refresh-catalog", className: "dsmn_retry", disabled: submitting || status === "selecting",
-                onClick: function () { if (props.load !== undefined) props.load(); } }, t("refresh"))),
-            status === "error" ? h("div", { key: "error", className: "dsmn_error" }, t("loadFailed") + messageOf(snapshot.error),
-              h("button", { type: "button", "data-action": "retry-catalog", className: "dsmn_retry", onClick: function () { if (props.load !== undefined) props.load(); } }, t("retry"))) : null,
-            submitting || status === "selecting" ? h("div", { key: "selecting", className: "dsmn_status", role: "status" }, t("selecting")) : null,
-            (status === "idle" || status === "loading") && available ? h("div", { key: "loading", className: "dsmn_status" }, t("loading")) : null,
-            shortcutRows.length > 0 ? h("div", { key: "shortcuts", className: "dsmn_shortcuts" }, shortcutRows) : null,
-            h("div", { key: "items", className: "dsmn_groups" }, rows)
+              h("span", {}, t("currentOutside") + (triggerLabel === undefined || triggerLabel === null ? "" : triggerLabel)),
+              h("button", { type: "button", "data-action": "refresh-catalog", className: "dsmn_retry", disabled: busy, onClick: reload }, t("refresh"))),
+            catalogError ? h("div", { key: "error", className: "dsmn_error" }, t("loadFailed") + messageOf(snapshot.error),
+              h("button", { type: "button", "data-action": "retry-catalog", className: "dsmn_retry", onClick: reload }, t("retry"))) : null,
+            busy ? h("div", { key: "selecting", className: "dsmn_status", role: "status" }, t("selecting")) : null,
+            status === "idle" || status === "loading" ? h("div", { key: "loading", className: "dsmn_status", role: "status" }, t(refreshing ? "refreshing" : "loading")) : null,
+            body
           );
-      var shortcutMenuNode = !open || pane !== "providers" || shortcutKind === null ? null : h(
-        uiComponent("MenuSurface") === null ? "div" : uiComponent("MenuSurface"), {
-          id: "dsmn-" + sessionId + "-" + shortcutKind,
-          className: "dsmn_menu dsmn_shortcutMenu scrollable", role: "menu", ref: shortcutRef,
-          "data-shortcut-menu": shortcutKind,
-          "data-side": shortcutPosition === null ? undefined : shortcutPosition.side,
-          "aria-label": t(shortcutKind === "favorites" ? "favorites" : "recent"),
-          style: shortcutPosition === null ? { left: 8, top: 8, visibility: "hidden" } : { left: shortcutPosition.left, top: shortcutPosition.top, width: shortcutPosition.width, maxHeight: shortcutPosition.maxHeight },
-          onMouseEnter: cancelShortcutClose, onMouseLeave: scheduleShortcutClose,
-          onKeyDown: function (event) {
-            event.stopPropagation();
-            if (event.key === "Escape" || event.key === "ArrowLeft") { event.preventDefault(); closeShortcut(true); return; }
-            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-            var entries = shortcutItemRefs.current.filter(function (node) { return node !== null && node !== undefined; });
-            if (entries.length === 0) return;
-            var at = entries.indexOf(event.target);
-            var next = event.key === "ArrowDown" ? (at + 1) % entries.length : (at <= 0 ? entries.length - 1 : at - 1);
-            entries[next].focus();
-            event.preventDefault();
-          }
-        },
-        h("div", { className: "dsmn_shortcutHeading" }, t(shortcutKind === "favorites" ? "favorites" : "recent")),
-        h("div", { className: "dsmn_groups" }, shortcutModels.length > 0
-          ? shortcutModels.map(function (entry) { return shortcutOption(entry, shortcutKind); })
-          : h("div", { className: "dsmn_empty" }, t(shortcutKind === "favorites" ? (preferences.favorites.length > 0 ? "favoritesUnavailable" : "favoritesEmpty") : "recentEmpty")))
-      );
-      if (menuNode !== null) menuNode = h("div", { className: "dsmn_menuLayer" }, menuNode, shortcutMenuNode);
       if (menuNode !== null && CAN_PORTAL) {
         try {
           menuNode = ReactDOM.createPortal(menuNode, document.body);
@@ -1444,11 +1964,37 @@ window.__ModuleLoader__.load({
         DIAG.dom.mode = "inline";
       }
 
+      var Toast = uiComponent("Toast");
+      var toastNode = toast === null || Toast === null ? null : h(Toast, {
+        key: "toast-" + toast.seq,
+        text: toast.text,
+        icon: uiNode("IconWarningOutlineRegular", {}),
+        anchor: rootRef.current !== null && rootRef.current !== undefined && typeof rootRef.current.closest === "function"
+          ? rootRef.current.closest("[data-composer-card]") : null,
+        onDone: function () { setToast(null); }
+      });
+
       return h(
         "div",
-        { className: "dsmn_root", ref: rootRef, onKeyDown: onMenuKeyDown },
+        {
+          className: "dsmn_root",
+          ref: rootRef,
+          onKeyDown: onRootKeyDown,
+          onBlur: function (event) {
+            var next = event === null || event === undefined ? null : event.relatedTarget;
+            if (!open || next === null || next === undefined) return;
+            if (containsNode(rootRef.current, next) || containsNode(popoverRef.current, next)) return;
+            close(false);
+          },
+          onMouseDown: function (event) {
+            var target = event === null || event === undefined ? null : event.target;
+            if (target !== null && target !== undefined && typeof target.closest === "function" && target.closest("button") !== null
+              && typeof event.preventDefault === "function") event.preventDefault();
+          }
+        },
         triggerNode,
-        menuNode
+        menuNode,
+        toastNode
       );
     }
 
@@ -1467,7 +2013,7 @@ window.__ModuleLoader__.load({
       var enabled = preferences.enabled !== false;
       var grouping = preferences.grouping;
       var tier = store.getTier();
-      var tierNote = tier === "host" ? t("storageHost") : tier === "local" ? t("storageLocal") : t("storageMemory");
+      var tierNote = tier === "local" ? t("storageLocal") : t("storageMemory");
 
       var modes = [
         { id: "off", label: t("groupingOff") },
@@ -1583,7 +2129,7 @@ window.__ModuleLoader__.load({
      * ================================================================== */
     var DIAG = {
       plugin: "dsh-model-navigator",
-      version: "0.3.2",
+      version: /*__VERSION__*/"dev",
       seat: { priority: -20, enabled: null, registered: false, error: null },
       errors: [],
       events: [],
@@ -1595,7 +2141,9 @@ window.__ModuleLoader__.load({
       // 浮层到底走没走到 createPortal 只能现场确认：react-dom 若不在 seed 模块表里，
       // CAN_PORTAL 会是 false 而静默退回内联渲染（面板就可能被祖先的 transform 裁掉）。
       dom: { portalAvailable: CAN_PORTAL, mode: "closed", portalError: null, panelAncestorSlot: null },
-      catalog: { providers: [], modelCount: 0 }
+      catalog: { providers: [], modelCount: 0 },
+      // conversation.input.model.label：是否读得到 SlotCore、当前胜出项、渲染与回退次数
+      label: { api: null, entry: null, renders: 0, fallbacks: 0, errors: 0, lastError: null }
     };
 
     /**
@@ -1738,7 +2286,8 @@ window.__ModuleLoader__.load({
             reason: face.reason,
             lastError: face.lastError,
             load: face.load,
-            select: face.select
+            select: face.select,
+            labels: face.labels
           });
         }
         setTick(function (value) { return value + 1; });
@@ -1790,7 +2339,8 @@ window.__ModuleLoader__.load({
         reason: props.reason,
         lastError: props.lastError,
         load: props.load !== undefined && props.load !== null ? props.load : live === null ? null : live.load,
-        select: props.select !== undefined && props.select !== null ? props.select : live === null ? null : live.select
+        select: props.select !== undefined && props.select !== null ? props.select : live === null ? null : live.select,
+        labels: props.labels !== undefined && props.labels !== null ? props.labels : live === null ? null : live.labels
       };
 
       if (view.directory !== null && view.directory !== undefined) return h(ModelNavigator, view);
@@ -1956,6 +2506,14 @@ window.__ModuleLoader__.load({
           panelAncestorSlot: DIAG.dom.panelAncestorSlot
         },
         catalog: DIAG.catalog,
+        label: {
+          api: DIAG.label.api,
+          entry: DIAG.label.entry,
+          renders: DIAG.label.renders,
+          fallbacks: DIAG.label.fallbacks,
+          errors: DIAG.label.errors,
+          lastError: DIAG.label.lastError
+        },
         selection: DIAG.selection === undefined ? null : DIAG.selection,
         errors: DIAG.errors.slice(0),
         events: DIAG.events.slice(0)
@@ -2002,7 +2560,7 @@ window.__ModuleLoader__.load({
     }
 
     function applyInner(ctx) {
-      var store = createPreferencesStore(safeGet(ctx, "settingsScope"));
+      var store = createPreferencesStore();
       var draftStore = createDraftStore();
       var t = function (key) {
         var value = DICT.zh[key];
@@ -2108,6 +2666,30 @@ window.__ModuleLoader__.load({
         var faces = new Map();
         var bindingFaces = new WeakMap();
 
+        // 标签槽位（conversation.input.model.label）的读取面：所有会话共用。
+        // bind(ns) 给标签项一个按它自己 locale 命名空间绑定的 t（宿主渲染器的 kit.t 同义），
+        // 取不到时退回原样返回 key。
+        var labelBinds = new Map();
+        var labels = {
+          slots: ctx.slots,
+          bind: function (ns) {
+            if (typeof ns !== "string" || ns.length === 0) return function (key) { return key; };
+            var cached = labelBinds.get(ns);
+            if (cached !== undefined) return cached;
+            try {
+              var locale = ctx.locale;
+              var bound = locale !== null && locale !== undefined && typeof locale.bind === "function" ? locale.bind(ns) : null;
+              if (typeof bound === "function") {
+                labelBinds.set(ns, bound);
+                return bound;
+              }
+            } catch (error) {
+              /* 退回 key */
+            }
+            return function (key) { return key; };
+          }
+        };
+
         function buildFace(sessionId) {
           var binding = null;
           var addressed = false;
@@ -2120,6 +2702,7 @@ window.__ModuleLoader__.load({
             // 捕获函数会让 composer 这一侧永远停在绑定前的内建词条 → 用转发读取。
             t: function (key) { return t(key); },
             directory: null,
+            labels: labels,
             reason: "directory-pending",
             lastError: null,
             resolve: function () {
@@ -2151,12 +2734,6 @@ window.__ModuleLoader__.load({
                 DIAG.composer.lastReason = null;
                 DIAG.composer.lastError = null;
                 recordEvent("composer directory resolved", sessionId);
-                try {
-                  var seedSnapshot = resolved.store.getSnapshot();
-                  if (seedSnapshot !== null && seedSnapshot !== undefined) draftStore.seed(sessionId, seedSnapshot.current);
-                } catch (error) {
-                  /* 播种失败不影响渲染 */
-                }
                 return true;
               } catch (error) {
                 binding = null;

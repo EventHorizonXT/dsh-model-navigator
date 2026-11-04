@@ -31,9 +31,11 @@ test("内置家族：Claude / Devin / Grok / DeepSeek / Gemini", () => {
   assert.equal(builtinFamilyOf("devin")?.id, "devin");
   assert.equal(builtinFamilyOf("grok-4")?.id, "grok");
   assert.equal(builtinFamilyOf("grok-code-fast-1")?.id, "grok");
-  for (const id of ["deepseek-v4-pro", "deepseek-chat", "deepseek/deepseek-reasoner", "dbrx-instruct"]) {
+  for (const id of ["deepseek-v4-pro", "deepseek-chat", "deepseek/deepseek-reasoner"]) {
     assert.equal(builtinFamilyOf(id)?.id, "deepseek", id);
   }
+  // DBRX 是 Databricks 的模型，0.3.2 误归到 DeepSeek；无法确认的厂商一律进「其他」
+  for (const id of ["dbrx-instruct", "databricks/dbrx-base"]) assert.equal(builtinFamilyOf(id), undefined, id);
   assert.equal(builtinFamilyOf("gemini-3-pro-preview")?.id, "gemini");
   assert.equal(builtinFamilyOf("gemma-3-27b")?.id, "gemini");
 });

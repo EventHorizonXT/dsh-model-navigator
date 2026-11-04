@@ -41,8 +41,10 @@ const ENTRIES = [
   "docs"
 ];
 
-// 绝不进入包的条目（防止把构建中间物或自身打进去）
-const DENY = [/^dist$/, /^node_modules$/, /^\./, /^package-lock\.json$/, /\.log$/];
+// 绝不进入包的条目（防止把构建中间物或自身打进去）。
+// lib/client.with-embeds.js 是 --with-embeds 写出的测试探针（会把 __core 挂到 window），
+// 只给离线测试用；解包后跑 `npm run check` 会重新生成它。
+const DENY = [/^dist$/, /^node_modules$/, /^\./, /^package-lock\.json$/, /\.log$/, /^client\.with-embeds\.js$/];
 
 function copyInto(from, to) {
   const stat = fs.statSync(from);
@@ -103,6 +105,12 @@ for (const entry of ENTRIES) {
   const from = path.join(root, entry);
   if (!fs.existsSync(from)) throw new Error(`缺少要打包的条目：${entry}`);
   copyInto(from, path.join(packRoot, entry));
+}
+
+// 包内不得出现测试探针：宿主只加载 lib/client.js，探针会把内部实现暴露到 window
+if (fs.existsSync(path.join(packRoot, "lib", "client.with-embeds.js"))) throw new Error("测试探针 lib/client.with-embeds.js 不能进入发布包");
+if (fs.readFileSync(path.join(packRoot, "lib", "client.js"), "utf8").includes("__DSH_MODEL_NAVIGATOR_CORE__")) {
+  throw new Error("lib/client.js 带有测试探针，正式产物必须是不带 --with-embeds 的那一份");
 }
 
 // 包内一致性检查：manifest 里的每个 exports 目标都必须真实存在

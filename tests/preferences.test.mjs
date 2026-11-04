@@ -8,9 +8,11 @@ import {
   createDefaultPreferences,
   normalizePreferences,
   patchPreferences,
-  preferencesEqual,
   familyCollapseKey,
-  familyCollapsed
+  familyCollapsed,
+  foldProviderFamilies,
+  rememberRecent,
+  RECENT_MODELS_LIMIT
 } from "../src/core/preferences.mjs";
 import { classifyModel } from "../src/core/classify.mjs";
 
@@ -45,12 +47,10 @@ test("normalizePreferences：损坏输入一律回退默认，不抛错", () => 
 test("normalizePreferences：数组去重、去空、保序", () => {
   const out = normalizePreferences({
     providerPins: ["b", "a", "b", "", null, 7],
-    favorites: ['["p","m"]', '["p","m"]'],
-    groupOrder: ["x", "y"]
+    favorites: ['["p","m"]', '["p","m"]']
   });
   assert.deepEqual(out.providerPins, ["b", "a"]);
   assert.deepEqual(out.favorites, ['["p","m"]']);
-  assert.deepEqual(out.groupOrder, ["x", "y"]);
 });
 
 test("normalizePreferences：modelOverrides 与 rules 逐条校验", () => {
@@ -110,11 +110,74 @@ test("patchPreferences：补丁不可信也被规范化", () => {
   assert.deepEqual(next.rules, [{ pattern: "*", familyId: "gpt" }]);
 });
 
-test("preferencesEqual 比较规范化结果，相同则视为无变化", () => {
-  assert.equal(preferencesEqual({ enabled: true }, { enabled: true }), true);
-  assert.equal(preferencesEqual({ enabled: true }, { enabled: false }), false);
-  assert.equal(preferencesEqual({ providerPins: ["a"] }, { providerPins: ["b"] }), false);
-  // 显式写出默认值与省略是等价的
-  assert.equal(preferencesEqual({ enabled: true }, { enabled: true, grouping: "channel-first" }), true);
-  assert.equal(preferencesEqual(normalizePreferences({ providerPins: ["a"] }), { providerPins: ["a"] }), true);
+test("normalizePreferences：不保留已移除的旧字段（groupOrder / providerDefaultEffort）", () => {
+  const out = normalizePreferences({ groupOrder: ["x"], providerDefaultEffort: false, enabled: false });
+  assert.equal(out.enabled, false);
+  assert.equal("groupOrder" in out, false);
+  assert.equal("providerDefaultEffort" in out, false);
+});
+
+test("recentModels：旧偏好按「最后一次的供应商优先」迁移；字段存在时以它为准", () => {
+  const key = (p, m) => JSON.stringify([p, m]);
+  const legacy = normalizePreferences({ lastProviderId: "b", lastModelByProvider: { a: "a1", b: "b1", c: "c1" } });
+  assert.deepEqual(legacy.recentModels, [key("b", "b1"), key("a", "a1"), key("c", "c1")]);
+  // 用户清空过「最近」：不能被旧字段迁移回来
+  assert.deepEqual(normalizePreferences({ recentModels: [], lastProviderId: "b", lastModelByProvider: { b: "b1" } }).recentModels, []);
+  // 补丁里 recentModels 整体替换，且去重/截断
+  const many = Array.from({ length: 12 }, (_, i) => key("x", "m" + i));
+  assert.equal(patchPreferences(createDefaultPreferences(), { recentModels: [many[0], many[0], ...many] }).recentModels.length, RECENT_MODELS_LIMIT);
+});
+
+test("rememberRecent：提到最前、去重、截断，不改原数组", () => {
+  const key = (p, m) => JSON.stringify([p, m]);
+  const list = [key("a", "1"), key("b", "1")];
+  assert.deepEqual(rememberRecent(list, "b", "1"), [key("b", "1"), key("a", "1")]);
+  assert.deepEqual(list, [key("a", "1"), key("b", "1")]);
+  assert.deepEqual(rememberRecent(undefined, "a", "1"), [key("a", "1")]);
+  let acc = [];
+  for (let i = 0; i < 20; i += 1) acc = rememberRecent(acc, "p", String(i));
+  assert.equal(acc.length, RECENT_MODELS_LIMIT);
+  assert.equal(acc[0], key("p", "19"));
+});
+
+test("collapsedProviders：规范化、逐键合并，providerCollapsed 与家族同一套默认规则", async () => {
+  const { normalizePreferences, patchPreferences, providerCollapsed } = await import("../src/core/preferences.mjs");
+  assert.deepEqual(normalizePreferences({}).collapsedProviders, {});
+  assert.deepEqual(normalizePreferences({ collapsedProviders: { a: true, b: false, c: "yes" } }).collapsedProviders, { a: true, b: false });
+  const next = patchPreferences(normalizePreferences({ collapsedProviders: { a: true } }), { collapsedProviders: { b: false } });
+  assert.deepEqual(next.collapsedProviders, { a: true, b: false }, "逐键合并而不是覆盖");
+  assert.equal(providerCollapsed({}, "x", false), true, "没记过 → 默认折叠");
+  assert.equal(providerCollapsed({}, "x", true), false, "当前选择所在的供应商默认展开");
+  assert.equal(providerCollapsed({ x: false }, "x", false), false, "显式展开优先");
+  assert.equal(providerCollapsed({ x: true }, "x", true), true, "显式折叠优先");
+});
+
+test("showUnavailable 默认 false，仅接受布尔值，可被 patch 打开", () => {
+  assert.equal(createDefaultPreferences().showUnavailable, false);
+  assert.equal(normalizePreferences({ showUnavailable: "yes" }).showUnavailable, false);
+  assert.equal(normalizePreferences({ showUnavailable: true }).showUnavailable, true);
+  assert.equal(patchPreferences(createDefaultPreferences(), { showUnavailable: true }).showUnavailable, true);
+});
+
+test("effortByModel：只留非空字符串，逐键合并，null 删除", () => {
+  assert.deepEqual(createDefaultPreferences().effortByModel, {});
+  assert.deepEqual(normalizePreferences({ effortByModel: { a: "high", b: "", c: 1, d: null } }).effortByModel, { a: "high" });
+  assert.deepEqual(normalizePreferences({ effortByModel: ["high"] }).effortByModel, {});
+  let prefs = patchPreferences(createDefaultPreferences(), { effortByModel: { a: "high" } });
+  prefs = patchPreferences(prefs, { effortByModel: { b: "low" } });
+  assert.deepEqual(prefs.effortByModel, { a: "high", b: "low" });
+  prefs = patchPreferences(prefs, { effortByModel: { a: null } });
+  assert.deepEqual(prefs.effortByModel, { b: "low" });
+});
+
+test("foldProviderFamilies：清掉该供应商的家族状态，当前家族显式折叠，其他供应商不动", () => {
+  const key = familyCollapseKey;
+  const map = { [key("p", "a")]: false, [key("p", "b")]: true, [key("pp", "a")]: false, [key("q", "a")]: false };
+  assert.deepEqual(foldProviderFamilies(map, "p", key("p", "c")), { [key("p", "a")]: null, [key("p", "b")]: null, [key("p", "c")]: true });
+  assert.deepEqual(foldProviderFamilies(map, "q", null), { [key("q", "a")]: null });
+  assert.deepEqual(foldProviderFamilies(undefined, "p"), {});
+
+  const prefs = patchPreferences(patchPreferences(createDefaultPreferences(), { collapsedFamilies: map }), { collapsedFamilies: foldProviderFamilies(map, "p", key("p", "a")) });
+  assert.deepEqual(prefs.collapsedFamilies, { [key("p", "a")]: true, [key("pp", "a")]: false, [key("q", "a")]: false });
+  assert.equal(familyCollapsed(prefs.collapsedFamilies, key("p", "b"), false), true, "回到默认折叠");
 });

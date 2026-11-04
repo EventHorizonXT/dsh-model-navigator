@@ -7,25 +7,34 @@
 
 export const PREFERENCES_SCHEMA_VERSION = 1;
 
-/** 设置命名空间（宿主若提供插件自有设置通道则用它做隔离作用域）。 */
+/** 偏好命名空间：客户端拼成 localStorage 键 `<namespace>:preferences:v<schema>`。 */
 export const PREFERENCES_NAMESPACE = "dsh-model-navigator";
 
 export const GROUPING_MODES = ["off", "channel-first", "family-first"];
+
+/** 「最近使用」最多保留的条目数（跨供应商、按最近一次选择排序）。 */
+export const RECENT_MODELS_LIMIT = 8;
 
 export const DEFAULT_PREFERENCES = Object.freeze({
   schemaVersion: PREFERENCES_SCHEMA_VERSION,
   enabled: true,
   grouping: "channel-first",
   showSearch: true,
-  providerDefaultEffort: true,
+  // 「不可用」分组（失效的收藏/最近、加载失败的供应商）默认折叠
+  showUnavailable: false,
   providerPins: [],
-  groupOrder: [],
   favorites: [],
   modelOverrides: [],
   rules: [],
   collapsedFamilies: {},
+  // 供应商折叠：providerId → true（折叠）/ false（展开）；没记过时只展开当前选择所在的供应商
+  collapsedProviders: {},
   lastProviderId: undefined,
-  lastModelByProvider: {}
+  lastModelByProvider: {},
+  // 每个模型上次选的思维强度：`JSON.stringify([providerId, modelId])` → 档位 ID；选默认档时没有这一项
+  effortByModel: {},
+  // MRU：`JSON.stringify([providerId, modelId])`，最新在前；与 favorites 同一种键
+  recentModels: []
 });
 
 function stringArray(value) {
@@ -72,13 +81,45 @@ function normalizeCollapse(value) {
   return out;
 }
 
-function normalizeLastModel(value) {
+function normalizeStringMap(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
   const out = {};
   const keys = Object.keys(value);
   for (let i = 0; i < keys.length; i += 1) {
-    const modelId = value[keys[i]];
-    if (typeof modelId === "string" && modelId.length > 0) out[keys[i]] = modelId;
+    const entry = value[keys[i]];
+    if (typeof entry === "string" && entry.length > 0) out[keys[i]] = entry;
+  }
+  return out;
+}
+
+function recentKeyOf(providerId, modelId) {
+  return JSON.stringify([providerId, modelId]);
+}
+
+/**
+ * 0.3.2 及更早只记了「每个供应商最后一次的模型」+「最后一次的供应商」，
+ * 没有跨供应商的先后顺序。迁移时只能确定最后一次的那条排第一，其余按原键序跟在后面。
+ */
+function migrateRecent(lastProviderId, lastModelByProvider) {
+  const out = [];
+  if (lastProviderId !== undefined && lastModelByProvider[lastProviderId] !== undefined) {
+    out.push(recentKeyOf(lastProviderId, lastModelByProvider[lastProviderId]));
+  }
+  const providers = Object.keys(lastModelByProvider);
+  for (let i = 0; i < providers.length && out.length < RECENT_MODELS_LIMIT; i += 1) {
+    if (providers[i] === lastProviderId) continue;
+    out.push(recentKeyOf(providers[i], lastModelByProvider[providers[i]]));
+  }
+  return out;
+}
+
+/** 把一次成功选择放到 MRU 最前面：去重、截断，返回新数组。 */
+export function rememberRecent(list, providerId, modelId) {
+  const key = recentKeyOf(providerId, modelId);
+  const out = [key];
+  const previous = Array.isArray(list) ? list : [];
+  for (let i = 0; i < previous.length && out.length < RECENT_MODELS_LIMIT; i += 1) {
+    if (previous[i] !== key) out.push(previous[i]);
   }
   return out;
 }
@@ -100,17 +141,21 @@ export function normalizePreferences(input) {
   if (typeof input.enabled === "boolean") out.enabled = input.enabled;
   if (GROUPING_MODES.includes(input.grouping)) out.grouping = input.grouping;
   if (typeof input.showSearch === "boolean") out.showSearch = input.showSearch;
-  if (typeof input.providerDefaultEffort === "boolean") out.providerDefaultEffort = input.providerDefaultEffort;
+  if (typeof input.showUnavailable === "boolean") out.showUnavailable = input.showUnavailable;
   out.providerPins = stringArray(input.providerPins);
-  out.groupOrder = stringArray(input.groupOrder);
   out.favorites = stringArray(input.favorites);
   out.modelOverrides = Array.isArray(input.modelOverrides) ? input.modelOverrides.map(normalizeOverride).filter(Boolean) : [];
   out.rules = Array.isArray(input.rules) ? input.rules.map(normalizeRule).filter(Boolean) : [];
   out.collapsedFamilies = normalizeCollapse(input.collapsedFamilies);
-  out.lastModelByProvider = normalizeLastModel(input.lastModelByProvider);
+  out.collapsedProviders = normalizeCollapse(input.collapsedProviders);
+  out.lastModelByProvider = normalizeStringMap(input.lastModelByProvider);
+  out.effortByModel = normalizeStringMap(input.effortByModel);
   if (typeof input.lastProviderId === "string" && input.lastProviderId.length > 0) out.lastProviderId = input.lastProviderId;
   else delete out.lastProviderId;
-  if (out.providerDefaultEffort === false) out.providerDefaultEffort = false;
+  // 字段存在（哪怕是空数组）就以它为准：用户清空「最近」后不能被旧字段迁移回来
+  out.recentModels = Array.isArray(input.recentModels)
+    ? stringArray(input.recentModels).slice(0, RECENT_MODELS_LIMIT)
+    : migrateRecent(out.lastProviderId, out.lastModelByProvider);
   return out;
 }
 
@@ -132,7 +177,31 @@ export function familyCollapsed(map, key, isCurrentFamily) {
   return isCurrentFamily !== true;
 }
 
-/** 浅层补丁：数组整体替换；collapsedFamilies / lastModelByProvider 逐键合并。 */
+/** 供应商是否折叠：与家族同一套规则（显式状态优先，否则只展开当前选择所在的供应商）。 */
+export function providerCollapsed(map, providerId, isCurrentProvider) {
+  return familyCollapsed(map, String(providerId), isCurrentProvider);
+}
+
+/**
+ * 收起供应商时一并收回它的家族，重新展开时只看到家族标题。
+ * 清掉已记的家族状态即回到默认折叠；当前家族默认展开，要显式折叠才收得回来。
+ * @returns 给 patchPreferences 的 collapsedFamilies 补丁（值为 null 表示删除这一键）
+ */
+export function foldProviderFamilies(map, providerId, currentFamilyKey) {
+  const prefix = familyCollapseKey(providerId, "");
+  const patch = {};
+  const keys = map === null || map === undefined ? [] : Object.keys(map);
+  for (let i = 0; i < keys.length; i += 1) {
+    if (keys[i].startsWith(prefix)) patch[keys[i]] = null;
+  }
+  if (typeof currentFamilyKey === "string") patch[currentFamilyKey] = true;
+  return patch;
+}
+
+/** 逐键合并的映射；值为 null 的键在规范化时被删除。 */
+const MERGED_MAPS = ["collapsedFamilies", "collapsedProviders", "lastModelByProvider", "effortByModel"];
+
+/** 浅层补丁：数组整体替换，MERGED_MAPS 逐键合并。 */
 export function patchPreferences(current, patch) {
   if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return normalizePreferences(current);
   const merged = { ...current };
@@ -141,7 +210,7 @@ export function patchPreferences(current, patch) {
     const key = keys[i];
     const value = patch[key];
     if (value === undefined) continue;
-    if (key === "collapsedFamilies" || key === "lastModelByProvider") {
+    if (MERGED_MAPS.includes(key)) {
       const currentEntry = current === null || current === undefined ? undefined : current[key];
       merged[key] = { ...(currentEntry === undefined || currentEntry === null ? {} : currentEntry), ...(value === null || value === undefined ? {} : value) };
       continue;
@@ -149,9 +218,4 @@ export function patchPreferences(current, patch) {
     merged[key] = value;
   }
   return normalizePreferences(merged);
-}
-
-/** 仅在真正变化时返回新对象，便于 store 去抖。 */
-export function preferencesEqual(left, right) {
-  return JSON.stringify(normalizePreferences(left)) === JSON.stringify(normalizePreferences(right));
 }
