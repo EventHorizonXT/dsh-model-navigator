@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * 生成可分发的 npm-pack 布局安装包：dist/dsh-model-navigator-<version>.tgz + dist/SHA256SUMS。
+ * 同一个包另存一份不带版本号的 dist/dsh-model-navigator.tgz，SHA256SUMS 同时列出两个文件名。
  *
  * 不依赖任何第三方包：先用 Node 复制文件做暂存目录，再用系统 tar 打包，最后用 node:crypto 计算校验值。
  * 目的：让「预构建包 + 校验值」可以用一条命令复现（计划 §16/§17 的交付物要求）。
@@ -76,6 +77,10 @@ if (!process.argv.includes("--skip-tests")) {
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const tgzName = `${pkg.name}-${pkg.version}.tgz`;
 const tgzPath = path.join(distDir, tgzName);
+// 插件商店条目用 releases/latest/download/<name>.tgz 指向最新正式版。
+// GitHub 只在请求时解析 latest，文件名照字面取，所以每个 Release 都要附这份不带版本号的同一个包。
+const latestName = `${pkg.name}.tgz`;
+const latestPath = path.join(distDir, latestName);
 
 // 固定时间戳与权限位：让同一份源码每次都产出逐字节相同的 .tgz（校验值才有意义）
 const SOURCE_DATE_EPOCH = 946684800; // 2000-01-01T00:00:00Z，整数秒，避免 pax 扩展头
@@ -128,6 +133,7 @@ if (!fs.existsSync(path.join(packRoot, pkg.icon.replace(/^\.\//, "")))) {
 
 console.log(`→ 打包 ${tgzName}`);
 fs.rmSync(tgzPath, { force: true });
+fs.rmSync(latestPath, { force: true });
 freezeTree(packRoot);
 // 两步走：先用 ustar 格式产出未压缩 tar（固定 mtime/权限位），再用 node:zlib 压缩。
 // 直接 `tar -czf` 会把当前时间写进 gzip 头，导致同一份源码每次哈希都不同。
@@ -138,11 +144,14 @@ run("tar", ["--no-xattrs", "--format", "ustar", "-cf", tarPath, "package"], {
 });
 const gzipped = zlib.gzipSync(fs.readFileSync(tarPath), { level: 9 });
 fs.writeFileSync(tgzPath, gzipped);
+fs.copyFileSync(tgzPath, latestPath);
 fs.rmSync(tarPath, { force: true });
 fs.rmSync(stageDir, { recursive: true, force: true });
 
-const digest = createHash("sha256").update(fs.readFileSync(tgzPath)).digest("hex");
-const sums = `${digest}  ${tgzName}\n`;
+const sha256Of = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const digest = sha256Of(tgzPath);
+if (sha256Of(latestPath) !== digest) throw new Error(`${latestName} 与 ${tgzName} 内容不一致`);
+const sums = `${digest}  ${tgzName}\n${digest}  ${latestName}\n`;
 fs.writeFileSync(path.join(distDir, "SHA256SUMS"), sums, "utf8");
 
 const entries = run("tar", ["-tzf", tgzPath], { stdio: ["ignore", "pipe", "inherit"] })
@@ -150,6 +159,7 @@ const entries = run("tar", ["-tzf", tgzPath], { stdio: ["ignore", "pipe", "inher
 
 console.log("");
 console.log(`包：      ${tgzPath}`);
+console.log(`另存为：  ${latestPath}（同一个包，不带版本号）`);
 console.log(`大小：    ${fs.statSync(tgzPath).size} bytes`);
 console.log(`条目数：  ${entries}`);
 console.log(`SHA-256： ${digest}`);

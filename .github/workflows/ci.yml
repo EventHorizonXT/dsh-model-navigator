@@ -21,4 +21,6 @@ jobs:
         run: git diff --exit-code -- lib/client.js
       - name: Build release package
         if: runner.os == 'macOS'
-        run: npm run package
+        run: |
+          npm run package
+          cd dist && shasum -a 256 -c SHA256SUMS

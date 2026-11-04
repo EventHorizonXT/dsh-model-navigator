@@ -1,12 +1,12 @@
 # 安装与更新
 
-已验证宿主：DeepSeek Harness Desktop **0.2.0-rc.2**（实机）；**0.2.1-rc.1 / rc.2** 已完成接入适配，**0.2.1-rc.5** 尚未核对。插件不额外配置供应商或凭据，沿用宿主目录。
+已验证宿主：DeepSeek Harness Desktop **0.2.0-rc.2**（实机）；**0.2.1-rc.1 / rc.2** 已完成接入适配；**0.2.1-rc.5** 经维护者实机试用，接入测试尚未重跑。插件不额外配置供应商或凭据，沿用宿主目录。
 
 ## 推荐：安装预构建包
 
 1. 打开 [v0.4.0 Release](https://github.com/EventHorizonXT/dsh-model-navigator/releases/tag/v0.4.0)。
-2. 下载 `dsh-model-navigator-0.4.0.tgz` 与 `SHA256SUMS`。
-3. 可选：在下载目录运行 `shasum -a 256 -c SHA256SUMS` 核对包。
+2. 下载 `dsh-model-navigator-0.4.0.tgz` 与 `SHA256SUMS`。Release 里的 `dsh-model-navigator.tgz` 是同一个包，只是文件名不带版本号，下载其中一个即可。
+3. 可选：在下载目录运行 `shasum -a 256 -c --ignore-missing SHA256SUMS` 核对包。`SHA256SUMS` 同时列出两个文件名，`--ignore-missing` 会跳过没下载的那一个。
 4. 在 Desktop 的 **插件 → 添加插件** 的“包名或地址”栏填入下载文件的绝对路径进行安装；也可使用宿主工具：
 
    ```text
@@ -43,7 +43,7 @@ npm run check
 npm run package
 ```
 
-输出 `dist/dsh-model-navigator-<版本>.tgz` 和 `dist/SHA256SUMS`。包采用 npm-pack 布局（顶层 `package/`），包含源码、正式客户端、测试和文档，宿主只加载 `lib/client.js`。测试探针 `lib/client.with-embeds.js` 不进入发布包，解包后运行 `npm run check` 会重新生成。
+输出 `dist/dsh-model-navigator-<版本>.tgz`、内容相同但不带版本号的 `dist/dsh-model-navigator.tgz`，以及列出这两个文件的 `dist/SHA256SUMS`。包采用 npm-pack 布局（顶层 `package/`），包含源码、正式客户端、测试和文档，宿主只加载 `lib/client.js`。测试探针 `lib/client.with-embeds.js` 不进入发布包，解包后运行 `npm run check` 会重新生成。
 
 ## 关闭增强
 
